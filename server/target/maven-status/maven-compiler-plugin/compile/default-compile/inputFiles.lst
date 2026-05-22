@@ -6,11 +6,13 @@ E:\Code\code-aduit\server\src\main\java\com\codeaudit\repository\IssueRepository
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\entity\Rule.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\common\BizException.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\ProjectService.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\GitService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\ReviewService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\config\WebConfig.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\OllamaAiChatService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\CodeAuditApplication.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\AiConfigService.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\dto\CommitInfo.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\RuleService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\controller\RuleController.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\entity\Project.java
@@ -29,3 +31,4 @@ E:\Code\code-aduit\server\src\main\java\com\codeaudit\repository\RuleRepository.
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\dto\ReviewResult.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\entity\Review.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\GitDiffService.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\dto\BranchInfo.java

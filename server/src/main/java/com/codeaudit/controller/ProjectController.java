@@ -2,7 +2,11 @@ package com.codeaudit.controller;
 
 import com.codeaudit.common.BizException;
 import com.codeaudit.common.Response;
+import com.codeaudit.dto.BranchInfo;
+import com.codeaudit.dto.CommitInfo;
+import com.codeaudit.dto.DiffBlock;
 import com.codeaudit.entity.Project;
+import com.codeaudit.service.GitService;
 import com.codeaudit.service.ProjectService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -10,6 +14,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 项目管理 REST 控制器
@@ -33,9 +38,11 @@ import java.util.List;
 public class ProjectController {
 
     private final ProjectService projectService;
+    private final GitService gitService;
 
-    public ProjectController(ProjectService projectService) {
+    public ProjectController(ProjectService projectService, GitService gitService) {
         this.projectService = projectService;
+        this.gitService = gitService;
     }
 
     /**
@@ -99,5 +106,51 @@ public class ProjectController {
     public Response<Void> delete(@PathVariable Long id) {
         projectService.delete(id);
         return Response.ok();
+    }
+
+    /**
+     * 获取项目的分支列表
+     */
+    @GetMapping("/{id}/branches")
+    public Response<List<BranchInfo>> getBranches(@PathVariable Long id) {
+        Project project = projectService.findById(id)
+                .orElseThrow(() -> new BizException(404, "项目不存在: " + id));
+        List<BranchInfo> branches = gitService.listBranches(project.getRepoPath());
+        return Response.ok(branches);
+    }
+
+    /**
+     * 获取项目的最近 commit 列表（默认最多 30 条）
+     */
+    @GetMapping("/{id}/commits")
+    public Response<List<CommitInfo>> getCommits(@PathVariable Long id,
+                                                  @RequestParam(defaultValue = "30") int count) {
+        Project project = projectService.findById(id)
+                .orElseThrow(() -> new BizException(404, "项目不存在: " + id));
+        List<CommitInfo> commits = gitService.listRecentCommits(project.getRepoPath(), count);
+        return Response.ok(commits);
+    }
+
+    /**
+     * 预览两个引用之间的变更文件列表
+     * <p>
+     * 请求体：
+     * <pre>{@code
+     * {
+     *   "fromRef": "main",
+     *   "toRef": "feature/xxx"
+     * }
+     * }</pre>
+     */
+    @PostMapping("/{id}/diff-preview")
+    public Response<List<DiffBlock>> previewDiff(@PathVariable Long id,
+                                                  @RequestBody Map<String, String> body) {
+        Project project = projectService.findById(id)
+                .orElseThrow(() -> new BizException(404, "项目不存在: " + id));
+        String fromRef = body.getOrDefault("fromRef", "HEAD~1");
+        String toRef = body.getOrDefault("toRef", "HEAD");
+        String language = project.getLanguage() != null ? project.getLanguage() : "Java";
+        List<DiffBlock> diffBlocks = gitService.previewDiff(project.getRepoPath(), fromRef, toRef, language);
+        return Response.ok(diffBlocks);
     }
 }

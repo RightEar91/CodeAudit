@@ -96,9 +96,11 @@ public class GitDiffService {
                     String diffContent = out.toString(StandardCharsets.UTF_8);
                     out.reset();
 
-                    // 7. 封装为 DiffBlock 结构
+                    String filePath = getFilePath(entry);
+                    diffContent = cleanDiffHeader(diffContent, filePath);
+
                     DiffBlock block = new DiffBlock(
-                        entry.getNewPath() != null ? entry.getNewPath() : entry.getOldPath(),
+                        filePath,
                         entry.getChangeType().name(),
                         countAddedLines(diffContent),
                         countRemovedLines(diffContent),
@@ -116,6 +118,32 @@ public class GitDiffService {
                 (language != null && !language.isBlank()) ? language : "Java",
                 fromCommit, toCommit);
         return diffBlocks;
+    }
+
+    /**
+     * 提取 DiffEntry 的实际文件路径
+     * <p>
+     * ADD 类型: oldPath 为 /dev/null，应取 newPath
+     * DELETE 类型: newPath 为 /dev/null，应取 oldPath
+     * MODIFY/RENAME 类型: 取 newPath
+     */
+    private String getFilePath(DiffEntry entry) {
+        String newPath = entry.getNewPath();
+        String oldPath = entry.getOldPath();
+        boolean isDevNull = "/dev/null".equals(newPath) || "/dev/null".equals(oldPath);
+        if (!isDevNull) {
+            return newPath != null ? newPath : oldPath;
+        }
+        return "/dev/null".equals(newPath) ? oldPath : newPath;
+    }
+
+    /**
+     * 清理 diff 头部中的 /dev/null 引用，使用实际文件路径替代
+     */
+    private String cleanDiffHeader(String diffContent, String filePath) {
+        return diffContent
+                .replace("--- /dev/null", "--- a/" + filePath)
+                .replace("+++ /dev/null", "+++ b/" + filePath);
     }
 
     /**
