@@ -1,17 +1,25 @@
 package com.codeaudit.controller;
 
+import java.util.Map;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.codeaudit.common.BizException;
 import com.codeaudit.common.Response;
 import com.codeaudit.entity.Issue;
 import com.codeaudit.entity.Review;
 import com.codeaudit.service.IssueService;
 import com.codeaudit.service.ReviewService;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * 审查管理 REST 控制器
@@ -50,6 +58,7 @@ public class ReviewController {
      * 分页参数示例：?page=0&size=20&sort=createdAt,desc
      */
     @GetMapping("/projects/{projectId}/reviews")
+    @Transactional(readOnly=true)
     public Response<Page<Review>> listByProject(@PathVariable Long projectId, Pageable pageable) {
         Page<Review> reviews = reviewService.listByProjectId(projectId, pageable);
         return Response.ok(reviews);
@@ -61,6 +70,7 @@ public class ReviewController {
      * @throws BizException 审查不存在时由全局异常处理器拦截（404）
      */
     @GetMapping("/reviews/{id}")
+    @Transactional(readOnly = true)
     public Response<Review> getById(@PathVariable Long id) {
         Review review = reviewService.findById(id)
                 .orElseThrow(() -> new BizException(404, "审查不存在: " + id));

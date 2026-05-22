@@ -3,33 +3,36 @@ package com.codeaudit.repository;
 import com.codeaudit.entity.Review;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 审查任务数据访问层
- * <p>
- * 提供对 ca_reviews 表的 CRUD 及按项目、状态等维度的查询。
  *
  * @author CodeAudit Team
  */
 @Repository
 public interface ReviewRepository extends JpaRepository<Review, Long> {
 
-    /**
-     * 按项目 ID 查询审查历史，按创建时间降序排列（最新的在前）
-     */
+    @Query("SELECT r FROM Review r JOIN FETCH r.project WHERE r.id = :id")
+    Optional<Review> findById(@Param("id") Long id);
+
+    @Override
+    @EntityGraph(attributePaths = "project")
+    List<Review> findAll();
+
+    @EntityGraph(attributePaths = "project")
     List<Review> findByProjectIdOrderByCreatedAtDesc(Long projectId);
 
-    /**
-     * 按项目 ID 分页查询审查历史，按创建时间降序
-     */
+    @EntityGraph(attributePaths = "project")
     Page<Review> findByProjectIdOrderByCreatedAtDesc(Long projectId, Pageable pageable);
 
-    /**
-     * 按审查状态筛选（pending / processing / completed / failed）
-     */
+    @EntityGraph(attributePaths = "project")
     List<Review> findByStatus(String status);
 }

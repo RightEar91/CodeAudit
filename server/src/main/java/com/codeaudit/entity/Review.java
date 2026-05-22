@@ -1,5 +1,6 @@
 package com.codeaudit.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -89,11 +90,22 @@ public class Review {
     @Column(name = "duration_ms")
     private Long durationMs;
 
+    /** 待审查的文件总数（diff 提取后写入，用于计算进度百分比） */
+    @Column(name = "total_files")
+    @Builder.Default
+    private Integer totalFiles = 0;
+
+    /** 已完成审查的文件数（每处理完一个文件 +1，前端轮询可感知进度） */
+    @Column(name = "reviewed_files")
+    @Builder.Default
+    private Integer reviewedFiles = 0;
+
     /** 失败原因（仅 status=failed 时有值） */
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
 
-    /** 审查发现的问题列表（级联删除） */
+    /** 审查发现的问题列表（级联删除），列表查询时不序列化，通过 /api/reviews/:id/issues 单独获取 */
+    @JsonIgnore
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<Issue> issues = new ArrayList<>();

@@ -11,6 +11,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -116,8 +118,21 @@ public class ReviewService {
             log.warn("审查范围内无{}文件变更: reviewId={}", project.getLanguage(), review.getId());
         }
 
-        // 4. 异步提交 AI 审查（立即返回，不阻塞 HTTP 请求线程）
-        reviewEngine.executeReview(review, diffBlocks, project.getLanguage());
+        // 3.5 回写文件总数，供前端展示进度（如 3/12 文件）
+        review.setTotalFiles(diffBlocks.size());
+        review = reviewRepository.save(review);
+
+        // 4. 注册事务提交后回调：确保 Review 已持久化到 DB 后再触发异步审查
+        final Review finalReview = review;
+        final List<DiffBlock> finalDiffBlocks = diffBlocks;
+        final String language = project.getLanguage();
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        reviewEngine.executeReview(finalReview, finalDiffBlocks, language);
+                    }
+                });
 
         return review;
     }

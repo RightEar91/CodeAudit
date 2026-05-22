@@ -1,3 +1,5 @@
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\config\JacksonConfig.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\controller\SettingsController.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\common\Response.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\controller\ProjectController.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\repository\IssueRepository.java
@@ -6,7 +8,9 @@ E:\Code\code-aduit\server\src\main\java\com\codeaudit\common\BizException.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\ProjectService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\ReviewService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\config\WebConfig.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\OllamaAiChatService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\CodeAuditApplication.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\AiConfigService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\RuleService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\controller\RuleController.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\entity\Project.java
@@ -15,10 +19,12 @@ E:\Code\code-aduit\server\src\main\java\com\codeaudit\repository\ReviewRepositor
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\config\AsyncConfig.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\repository\ProjectRepository.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\entity\Issue.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\AiChatService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\config\GlobalExceptionHandler.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\dto\DiffBlock.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\controller\ReviewController.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\IssueService.java
+E:\Code\code-aduit\server\src\main\java\com\codeaudit\service\OpenAiAiChatService.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\repository\RuleRepository.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\dto\ReviewResult.java
 E:\Code\code-aduit\server\src\main\java\com\codeaudit\entity\Review.java

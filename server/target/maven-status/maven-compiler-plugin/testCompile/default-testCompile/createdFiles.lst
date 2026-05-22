@@ -1,0 +1,7 @@
+com\codeaudit\service\RuleServiceTest.class
+com\codeaudit\service\ReviewServiceTest.class
+com\codeaudit\service\OpenAiAiChatServiceTest.class
+com\codeaudit\service\IssueServiceTest.class
+com\codeaudit\CodeAuditApplicationTests.class
+com\codeaudit\service\ProjectServiceTest.class
+com\codeaudit\service\OllamaAiChatServiceTest.class
