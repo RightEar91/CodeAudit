@@ -79,7 +79,8 @@ export function highlightCode(code: string, language: string): string {
   }
 }
 
-export function highlightDiffLine(line: string, prefix: string, language: string): string {
+export function highlightDiffLine(line: string, language: string): string {
+  const prefix = line.length > 0 ? line.charAt(0) : ''
   const code = line.length > 1 ? line.substring(1) : ''
   return prefix + highlightCode(code, language)
 }
@@ -91,10 +92,10 @@ export function highlightDiffContent(diffContent: string, filePath: string): Arr
       return { type: 'header', html: escapeHtml(line) }
     }
     if (line.startsWith('+') && !line.startsWith('+++')) {
-      return { type: 'add', html: highlightDiffLine(line, '+', language) }
+      return { type: 'add', html: highlightDiffLine(line, language) }
     }
     if (line.startsWith('-') && !line.startsWith('---')) {
-      return { type: 'remove', html: highlightDiffLine(line, '-', language) }
+      return { type: 'remove', html: highlightDiffLine(line, language) }
     }
     return { type: 'context', html: highlightCode(line, language) }
   })
