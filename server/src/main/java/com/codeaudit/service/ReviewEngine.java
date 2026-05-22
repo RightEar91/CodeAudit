@@ -136,8 +136,6 @@ public class ReviewEngine {
                     }
 
                     int done = reviewedFiles.incrementAndGet();
-                    finalReview.setReviewedFiles(done);
-                    reviewRepository.save(finalReview);
                     log.debug("文件审查完成 [{}/{}]: {}", done, diffBlocks.size(), diffBlock.filePath());
                 }, executor);
 
