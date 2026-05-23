@@ -176,6 +176,29 @@ const formatDuration = (ms?: number) => {
   return `${(ms / 60000).toFixed(1)}min`
 }
 
+const formatRelativeTime = (dateStr?: string) => {
+  if (!dateStr) return ''
+  const now = Date.now()
+  const then = new Date(dateStr).getTime()
+  const diff = now - then
+  if (diff < 0) return ''
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return '刚刚'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} 分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} 小时前`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days} 天前`
+  const months = Math.floor(days / 30)
+  return `${months} 个月前`
+}
+
+const formatDateTime = (dateStr?: string) => {
+  if (!dateStr) return '-'
+  return dateStr.substring(0, 16).replace('T', ' ')
+}
+
 const progressPercent = (review: Review) => {
   if (!review.totalFiles || review.totalFiles === 0) return 0
   return Math.round((review.reviewedFiles || 0) / review.totalFiles * 100)
@@ -369,7 +392,8 @@ onUnmounted(() => {
                 </el-tag>
               </div>
               <div class="review-meta">
-                <span>{{ review.createdAt?.substring(0, 16)?.replace('T', ' ') }}</span>
+                <span>{{ formatDateTime(review.createdAt) }}</span>
+                <span class="meta-rel-time">（{{ formatRelativeTime(review.createdAt) }}）</span>
                 <span class="meta-sep">|</span>
                 <span>耗时 {{ formatDuration(review.durationMs) }}</span>
                 <span class="meta-sep">|</span>
@@ -611,6 +635,10 @@ onUnmounted(() => {
 
 .meta-sep {
   opacity: 0.4;
+}
+
+.meta-rel-time {
+  opacity: 0.75;
 }
 
 .severity-tags {

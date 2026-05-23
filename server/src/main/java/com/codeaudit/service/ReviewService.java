@@ -63,6 +63,7 @@ public class ReviewService {
     /**
      * 分页查询某项目的审查记录，按创建时间降序
      */
+    @Transactional(readOnly = true)
     public Page<Review> listByProjectId(Long projectId, Pageable pageable) {
         return reviewRepository.findByProjectIdOrderByCreatedAtDesc(projectId, pageable);
     }

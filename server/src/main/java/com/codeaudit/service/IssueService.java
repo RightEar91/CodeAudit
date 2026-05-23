@@ -39,6 +39,7 @@ public class IssueService {
     /**
      * 分页查询某次审查发现的所有问题
      */
+    @Transactional(readOnly = true)
     public Page<Issue> listByReviewId(Long reviewId, Pageable pageable) {
         return issueRepository.findByReviewId(reviewId, pageable);
     }

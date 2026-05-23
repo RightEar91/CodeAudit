@@ -161,10 +161,8 @@ public class GitDiffService {
      * 根据语言决定是否包含该文件
      */
     private boolean shouldIncludeFile(String newPath, String oldPath, String language) {
-        if (language == null || language.isBlank()) {
-            return newPath.endsWith(".java") || oldPath.endsWith(".java");
-        }
-        return switch (language.toLowerCase()) {
+        String lang = (language != null && !language.isBlank()) ? language.toLowerCase() : "java";
+        return switch (lang) {
             case "java" -> newPath.endsWith(".java") || oldPath.endsWith(".java");
             case "python" -> newPath.endsWith(".py") || oldPath.endsWith(".py");
             case "go" -> newPath.endsWith(".go") || oldPath.endsWith(".go");
@@ -174,11 +172,11 @@ public class GitDiffService {
             case "typescript" ->
                     newPath.endsWith(".ts") || oldPath.endsWith(".ts") ||
                     newPath.endsWith(".tsx") || oldPath.endsWith(".tsx");
-            case "c", "c++" ->
+            case "c", "c++", "cpp" ->
                     newPath.endsWith(".c") || oldPath.endsWith(".c") ||
                     newPath.endsWith(".cpp") || oldPath.endsWith(".cpp") ||
                     newPath.endsWith(".h") || oldPath.endsWith(".h");
-            default -> true; // 未知语言不过滤，审查所有文件
+            default -> true;
         };
     }
 

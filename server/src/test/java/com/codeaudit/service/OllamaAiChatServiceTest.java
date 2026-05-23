@@ -5,8 +5,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.ollama.api.OllamaOptions;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
@@ -34,6 +36,7 @@ class OllamaAiChatServiceTest {
         when(chatClientBuilder.build()).thenReturn(chatClient);
         when(chatClient.prompt()).thenReturn(mock(ChatClient.ChatClientRequestSpec.class));
         when(chatClient.prompt().user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.options(any(OllamaOptions.class))).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(responseSpec);
         when(responseSpec.content()).thenReturn("Hello from Ollama");
         when(aiConfigService.getOllamaModel()).thenReturn("qwen3:8b");

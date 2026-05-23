@@ -72,7 +72,7 @@ export function detectLanguage(filePath: string): string {
 export function highlightCode(code: string, language: string): string {
   const lang = language || 'plaintext'
   try {
-    const result = hljs.highlight(escapeHtml(code), { language: lang, ignoreIllegals: true })
+    const result = hljs.highlight(code, { language: lang, ignoreIllegals: true })
     return result.value
   } catch {
     return escapeHtml(code)

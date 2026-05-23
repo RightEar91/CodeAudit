@@ -133,22 +133,16 @@ public class ProjectController {
 
     /**
      * 预览两个引用之间的变更文件列表
-     * <p>
-     * 请求体：
-     * <pre>{@code
-     * {
-     *   "fromRef": "main",
-     *   "toRef": "feature/xxx"
-     * }
-     * }</pre>
+     *
+     * @param fromRef 源引用（默认 HEAD~1）
+     * @param toRef   目标引用（默认 HEAD）
      */
-    @PostMapping("/{id}/diff-preview")
+    @GetMapping("/{id}/diff-preview")
     public Response<List<DiffBlock>> previewDiff(@PathVariable Long id,
-                                                  @RequestBody Map<String, String> body) {
+                                                  @RequestParam(defaultValue = "HEAD~1") String fromRef,
+                                                  @RequestParam(defaultValue = "HEAD") String toRef) {
         Project project = projectService.findById(id)
                 .orElseThrow(() -> new BizException(404, "项目不存在: " + id));
-        String fromRef = body.getOrDefault("fromRef", "HEAD~1");
-        String toRef = body.getOrDefault("toRef", "HEAD");
         String language = project.getLanguage() != null ? project.getLanguage() : "Java";
         List<DiffBlock> diffBlocks = gitService.previewDiff(project.getRepoPath(), fromRef, toRef, language);
         return Response.ok(diffBlocks);

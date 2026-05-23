@@ -59,5 +59,5 @@ export function listCommits(projectId: number, count?: number) {
 }
 
 export function previewDiff(projectId: number, fromRef: string, toRef: string) {
-  return api.post<any, { data: DiffBlock[] }>(`/projects/${projectId}/diff-preview`, { fromRef, toRef })
+  return api.get<any, { data: DiffBlock[] }>(`/projects/${projectId}/diff-preview`, { params: { fromRef, toRef } })
 }

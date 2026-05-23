@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -164,10 +165,18 @@ public class AiConfigService {
             }
         }
         if (body.containsKey("ollamaUrl")) {
-            setOllamaBaseUrl((String) body.get("ollamaUrl"));
+            String url = (String) body.get("ollamaUrl");
+            if (url == null || url.isBlank() || !isValidHttpUrl(url)) {
+                log.warn("无效的 Ollama URL: {}", url);
+            } else {
+                setOllamaBaseUrl(url);
+            }
         }
         if (body.containsKey("ollamaModel")) {
-            setOllamaModel((String) body.get("ollamaModel"));
+            String model = (String) body.get("ollamaModel");
+            if (model != null && !model.isBlank()) {
+                setOllamaModel(model);
+            }
         }
         if (body.containsKey("openaiApiKey")) {
             String key = (String) body.get("openaiApiKey");
@@ -176,15 +185,25 @@ public class AiConfigService {
             }
         }
         if (body.containsKey("openaiBaseUrl")) {
-            setOpenaiBaseUrl((String) body.get("openaiBaseUrl"));
+            String url = (String) body.get("openaiBaseUrl");
+            if (url == null || url.isBlank() || !isValidHttpUrl(url)) {
+                log.warn("无效的 OpenAI Base URL: {}", url);
+            } else {
+                setOpenaiBaseUrl(url);
+            }
         }
         if (body.containsKey("openaiModel")) {
             setOpenaiModel((String) body.get("openaiModel"));
         }
         if (body.containsKey("openaiTemperature")) {
             Object temp = body.get("openaiTemperature");
-            if (temp instanceof Number) {
-                setOpenaiTemperature(((Number) temp).doubleValue());
+            if (temp instanceof Number num) {
+                double val = num.doubleValue();
+                if (val >= 0.0 && val <= 2.0) {
+                    setOpenaiTemperature(val);
+                } else {
+                    log.warn("Temperature 值超出范围 [0, 2]: {}", val);
+                }
             }
         }
         if (body.containsKey("thinkingEnabled")) {
@@ -203,5 +222,15 @@ public class AiConfigService {
         if (key == null || key.isBlank()) return "";
         if (key.length() <= 8) return "****";
         return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
+    }
+
+    private boolean isValidHttpUrl(String url) {
+        try {
+            URI uri = URI.create(url);
+            String scheme = uri.getScheme();
+            return "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+        } catch (Exception e) {
+            return false;
+        }
     }
 }

@@ -13,20 +13,21 @@ import java.util.List;
  * 审查问题数据访问层
  * <p>
  * 提供对 ca_issues 表的 CRUD 及按审查任务、严重程度等维度的查询。
- * 查询方法使用 {@link EntityGraph} 预加载 review 关联，避免 JSON 序列化时的懒加载异常。
+ * 查询方法使用 {@link EntityGraph} 预加载 review 及 review.project 关联，
+ * 避免 open-in-view=false 时 Jackson 序列化触发懒加载异常。
  *
  * @author CodeAudit Team
  */
 @Repository
 public interface IssueRepository extends JpaRepository<Issue, Long> {
 
-    @EntityGraph(attributePaths = "review")
+    @EntityGraph(attributePaths = {"review", "review.project"})
     List<Issue> findByReviewId(Long reviewId);
 
-    @EntityGraph(attributePaths = "review")
+    @EntityGraph(attributePaths = {"review", "review.project"})
     Page<Issue> findByReviewId(Long reviewId, Pageable pageable);
 
-    @EntityGraph(attributePaths = "review")
+    @EntityGraph(attributePaths = {"review", "review.project"})
     List<Issue> findByReviewIdAndSeverity(Long reviewId, String severity);
 
     /**

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * <p>
  * 异常映射关系：
  * <ul>
- *   <li>{@link BizException}          → 取其内置 code（映射 HTTP 状态码）+ message</li>
+ *   <li>{@link BizException}          → HTTP 400，具体业务码在响应体中</li>
  *   <li>{@link IllegalArgumentException}  → 400 Bad Request</li>
  *   <li>{@link MethodArgumentNotValidException} → 400（参数校验失败）</li>
  *   <li>{@link Exception}                 → 500 Internal Server Error</li>
@@ -33,7 +33,7 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
-     * 业务异常 — 根据异常中的 code 决定 HTTP 状态码
+     * 业务异常 — HTTP 状态码统一返回 400，具体业务码在响应体中
      */
     @ExceptionHandler(BizException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)

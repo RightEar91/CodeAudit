@@ -4,9 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -14,8 +12,10 @@ import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.codeaudit.dto.DiffBlock;
 import com.codeaudit.dto.ReviewResult;
@@ -25,7 +25,6 @@ import com.codeaudit.entity.Rule;
 import com.codeaudit.repository.IssueRepository;
 import com.codeaudit.repository.ReviewRepository;
 import com.codeaudit.repository.RuleRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -50,54 +49,54 @@ public class ReviewEngine {
     private final ReviewRepository reviewRepository;
     private final IssueRepository issueRepository;
     private final ObjectMapper objectMapper;
+    private final Executor reviewExecutor;
 
     public ReviewEngine(AiChatService aiChatService,
                         AiConfigService aiConfigService,
                         RuleRepository ruleRepository,
                         ReviewRepository reviewRepository,
                         IssueRepository issueRepository,
-                        ObjectMapper objectMapper) {
+                        ObjectMapper objectMapper,
+                        @Qualifier("reviewExecutor") Executor reviewExecutor) {
         this.aiChatService = aiChatService;
         this.aiConfigService = aiConfigService;
         this.ruleRepository = ruleRepository;
         this.reviewRepository = reviewRepository;
         this.issueRepository = issueRepository;
         this.objectMapper = objectMapper;
+        this.reviewExecutor = reviewExecutor;
     }
 
     /**
      * 异步执行 AI 审查任务
      * <p>
-     * 文件级并行：用固定线程池 + CompletableFuture 并行处理 diff 文件，
-     * 并行度由 {@code codeaudit.ai.review.parallelism} 控制（默认 2，上限 8）。
+     * 文件级并行：用 CompletableFuture + 共享线程池 reviewExecutor 并行处理 diff 文件。
+     * 通过 {@code codeaudit.ai.review.parallelism} 控制并发度。
      */
     @Async("reviewExecutor")
+    @Transactional(noRollbackFor = Exception.class)
     public void executeReview(Review review, List<DiffBlock> diffBlocks, String language) {
         long startTime = System.currentTimeMillis();
-        Review attachedReview = null;
+        Review attachedReview;
         try {
             attachedReview = reviewRepository.findById(review.getId())
                     .orElseThrow(() -> new IllegalStateException("审查任务不存在: " + review.getId()));
             attachedReview.setStatus("processing");
-            reviewRepository.save(attachedReview);
+            reviewRepository.saveAndFlush(attachedReview);
             log.info("开始审查: reviewId={}, 文件数={}, 并行度={}",
                     attachedReview.getId(), diffBlocks.size(), aiConfigService.getParallelism());
 
             if (diffBlocks.isEmpty()) {
                 attachedReview.setStatus("completed");
                 attachedReview.setErrorMessage("无待审查的变更文件");
-                reviewRepository.save(attachedReview);
+                reviewRepository.saveAndFlush(attachedReview);
                 return;
             }
 
             List<Rule> enabledRules = ruleRepository.findByIsEnabledTrue();
             log.debug("已加载 {} 条启用规则", enabledRules.size());
 
-            final Review finalReview = attachedReview;
-
-            // 并行审查
-            int parallelism = Math.max(1, Math.min(diffBlocks.size(), aiConfigService.getParallelism()));
-            ExecutorService executor = Executors.newFixedThreadPool(parallelism);
+            final Long reviewId = attachedReview.getId();
 
             AtomicInteger highCount = new AtomicInteger(0);
             AtomicInteger mediumCount = new AtomicInteger(0);
@@ -117,7 +116,7 @@ public class ReviewEngine {
                     if (result != null && result.issues() != null) {
                         for (ReviewResult.IssueItem item : result.issues()) {
                             Issue issue = Issue.builder()
-                                    .review(finalReview)
+                                    .review(reviewRepository.getReferenceById(reviewId))
                                     .filePath(diffBlock.filePath())
                                     .lineNumber(item.line())
                                     .severity(item.severity())
@@ -137,41 +136,43 @@ public class ReviewEngine {
 
                     int done = reviewedFiles.incrementAndGet();
                     log.debug("文件审查完成 [{}/{}]: {}", done, diffBlocks.size(), diffBlock.filePath());
-                }, executor);
+                }, reviewExecutor);
 
                 futures.add(future);
             }
 
-            // 等待全部完成
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-            executor.shutdown();
-            try { executor.awaitTermination(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) {}
 
             if (!issueBatch.isEmpty()) {
                 issueRepository.saveAll(issueBatch);
             }
 
+            attachedReview = reviewRepository.findById(reviewId)
+                    .orElseThrow(() -> new IllegalStateException("审查任务消失: " + reviewId));
             attachedReview.setHighCount(highCount.get());
             attachedReview.setMediumCount(mediumCount.get());
             attachedReview.setLowCount(lowCount.get());
             attachedReview.setTotalIssues(highCount.get() + mediumCount.get() + lowCount.get());
             attachedReview.setStatus("completed");
             attachedReview.setReviewedFiles(diffBlocks.size());
-            reviewRepository.save(attachedReview);
+            attachedReview.setDurationMs(System.currentTimeMillis() - startTime);
+            reviewRepository.saveAndFlush(attachedReview);
             log.info("审查完成: reviewId={}, 问题数: HIGH={} MEDIUM={} LOW={}",
                     attachedReview.getId(), highCount.get(), mediumCount.get(), lowCount.get());
 
         } catch (Exception e) {
             log.error("审查失败: reviewId={}, 错误: {}", review.getId(), e.getMessage(), e);
-            attachedReview = attachedReview != null ? reviewRepository.findById(review.getId()).orElse(attachedReview) : reviewRepository.findById(review.getId()).orElse(review);
-            attachedReview.setStatus("failed");
-            attachedReview.setErrorMessage(e.getMessage());
-            reviewRepository.save(attachedReview);
-        } finally {
-            attachedReview = attachedReview != null ? reviewRepository.findById(review.getId()).orElse(attachedReview) : reviewRepository.findById(review.getId()).orElse(review);
-            attachedReview.setDurationMs(System.currentTimeMillis() - startTime);
-            reviewRepository.save(attachedReview);
+            try {
+                attachedReview = reviewRepository.findById(review.getId()).orElse(null);
+                if (attachedReview != null) {
+                    attachedReview.setStatus("failed");
+                    attachedReview.setErrorMessage(e.getMessage());
+                    attachedReview.setDurationMs(System.currentTimeMillis() - startTime);
+                    reviewRepository.saveAndFlush(attachedReview);
+                }
+            } catch (Exception inner) {
+                log.error("无法更新审查失败状态: reviewId={}", review.getId(), inner);
+            }
         }
     }
 
@@ -216,6 +217,10 @@ public class ReviewEngine {
     }
 
     private ReviewResult parseReviewResponse(String response) {
+        if (response == null || response.isBlank()) {
+            log.warn("LLM 返回空响应");
+            return new ReviewResult(List.of());
+        }
         try {
             String json = response.trim();
             Matcher matcher = JSON_CODE_BLOCK.matcher(json);
@@ -223,8 +228,8 @@ public class ReviewEngine {
                 json = matcher.group(1).trim();
             }
             return objectMapper.readValue(json, ReviewResult.class);
-        } catch (JsonProcessingException e) {
-            log.warn("LLM 返回的 JSON 解析失败，原始响应: {}", response);
+        } catch (Exception e) {
+            log.warn("LLM 返回的 JSON 解析失败，原始响应: {}", response, e);
             return new ReviewResult(List.of());
         }
     }

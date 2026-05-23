@@ -17,6 +17,23 @@ const parallelism = ref(2)
 const checking = ref(false)
 const ollamaStatus = ref<'unknown' | 'connected' | 'disconnected'>('unknown')
 const saving = ref(false)
+const ollamaModels = ref<string[]>([])
+const modelsLoading = ref(false)
+
+async function fetchOllamaModels() {
+  modelsLoading.value = true
+  try {
+    const res = await api.get('/ollama/models', { timeout: 5000 })
+    ollamaModels.value = res.data || []
+    if (ollamaModels.value.length > 0 && !ollamaModels.value.includes(ollamaModel.value)) {
+      ollamaModel.value = ollamaModels.value[0]
+    }
+  } catch {
+    ollamaModels.value = []
+  } finally {
+    modelsLoading.value = false
+  }
+}
 
 async function checkOllama() {
   checking.value = true
@@ -25,6 +42,7 @@ async function checkOllama() {
     await api.get('/ollama/check', { timeout: 5000 })
     ollamaStatus.value = 'connected'
     ElMessage.success('Ollama 连接正常')
+    await fetchOllamaModels()
   } catch (e) {
     ollamaStatus.value = 'disconnected'
     ElMessage.error('无法连接 Ollama，请检查服务和地址')
@@ -80,7 +98,12 @@ watch(provider, () => {
   }
 })
 
-onMounted(fetchSettings)
+onMounted(async () => {
+  await fetchSettings()
+  if (provider.value === 'ollama') {
+    fetchOllamaModels()
+  }
+})
 </script>
 
 <template>
@@ -147,7 +170,23 @@ onMounted(fetchSettings)
           </div>
           <div class="form-item">
             <label>模型名称</label>
-            <el-input v-model="ollamaModel" placeholder="qwen3:8b" />
+            <el-select
+              v-model="ollamaModel"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="选择或输入模型名，如 qwen3:8b"
+              style="width: 100%"
+              :loading="modelsLoading"
+              @focus="ollamaModels.length === 0 ? fetchOllamaModels() : null"
+            >
+              <el-option
+                v-for="m in ollamaModels"
+                :key="m"
+                :label="m"
+                :value="m"
+              />
+            </el-select>
           </div>
           <div class="form-actions">
             <el-button :loading="checking" @click="checkOllama">检测连接</el-button>
