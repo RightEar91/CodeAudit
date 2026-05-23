@@ -1,0 +1,141 @@
+package com.codeaudit.service;
+
+import com.codeaudit.common.BizException;
+import com.codeaudit.entity.Project;
+import com.codeaudit.entity.Review;
+import com.codeaudit.repository.ReviewRepository;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Collections;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/**
+ * ReviewService 单元测试
+ *
+ * @author CodeAudit Team
+ */
+@ExtendWith(MockitoExtension.class)
+class ReviewServiceTest {
+
+    @Mock
+    private ReviewRepository reviewRepository;
+
+    @Mock
+    private ProjectService projectService;
+
+    @Mock
+    private GitDiffService gitDiffService;
+
+    @Mock
+    private ReviewEngine reviewEngine;
+
+    @InjectMocks
+    private ReviewService reviewService;
+
+    @Test
+    void create_shouldSucceed_whenProjectExists() {
+        Project project = Project.builder()
+                .id(1L)
+                .name("TestProject")
+                .repoPath(".")
+                .language("Java")
+                .build();
+
+        Review review = Review.builder()
+                .id(10L)
+                .project(project)
+                .title("Code Review")
+                .fromRef("HEAD~1")
+                .toRef("HEAD")
+                .status("pending")
+                .build();
+
+        when(projectService.findById(1L)).thenReturn(Optional.of(project));
+        when(reviewRepository.save(any())).thenReturn(review);
+        when(gitDiffService.extractDiffBetweenCommits(any(), any(), any(), any()))
+                .thenReturn(Collections.emptyList());
+        doNothing().when(reviewEngine).executeReview(any(), any(), any());
+
+        Review result = reviewService.create(1L, "Code Review", null, null);
+
+        assertNotNull(result);
+        assertEquals("pending", result.getStatus());
+        verify(reviewEngine).executeReview(any(), any(), eq("Java"));
+    }
+
+    @Test
+    void create_shouldThrowBizException_whenProjectNotFound() {
+        when(projectService.findById(99L)).thenReturn(Optional.empty());
+
+        BizException ex = assertThrows(BizException.class,
+                () -> reviewService.create(99L, "Test", null, null));
+
+        assertEquals(404, ex.getCode());
+        assertTrue(ex.getMessage().contains("项目不存在"));
+    }
+
+    @Test
+    void cancel_shouldSucceed_whenStatusIsPending() {
+        Review review = Review.builder()
+                .id(1L)
+                .status("pending")
+                .build();
+
+        when(reviewRepository.findById(1L)).thenReturn(Optional.of(review));
+
+        reviewService.cancel(1L);
+
+        assertEquals("failed", review.getStatus());
+        assertEquals("用户手动取消", review.getErrorMessage());
+        verify(reviewRepository).save(review);
+    }
+
+    @Test
+    void cancel_shouldSucceed_whenStatusIsProcessing() {
+        Review review = Review.builder()
+                .id(1L)
+                .status("processing")
+                .build();
+
+        when(reviewRepository.findById(1L)).thenReturn(Optional.of(review));
+
+        reviewService.cancel(1L);
+
+        assertEquals("failed", review.getStatus());
+        verify(reviewRepository).save(review);
+    }
+
+    @Test
+    void cancel_shouldThrowBizException_whenStatusIsCompleted() {
+        Review review = Review.builder()
+                .id(1L)
+                .status("completed")
+                .build();
+
+        when(reviewRepository.findById(1L)).thenReturn(Optional.of(review));
+
+        BizException ex = assertThrows(BizException.class, () -> reviewService.cancel(1L));
+
+        assertEquals(400, ex.getCode());
+        assertTrue(ex.getMessage().contains("当前状态不可取消"));
+        verify(reviewRepository, never()).save(any());
+    }
+
+    @Test
+    void cancel_shouldThrowBizException_whenReviewNotFound() {
+        when(reviewRepository.findById(99L)).thenReturn(Optional.empty());
+
+        BizException ex = assertThrows(BizException.class, () -> reviewService.cancel(99L));
+
+        assertEquals(404, ex.getCode());
+        assertTrue(ex.getMessage().contains("审查不存在"));
+    }
+}
