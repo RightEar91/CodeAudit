@@ -10,8 +10,18 @@ export default defineConfig({
     }
   },
   server: {
-    port: 5173,
+    port: 5174,
     proxy: {
+      '/api/reviews': {
+        target: 'http://localhost:9090',
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, req) => {
+            proxyRes.headers['cache-control'] = 'no-cache, no-transform'
+            proxyRes.headers['x-accel-buffering'] = 'no'
+          })
+        }
+      },
       '/api': {
         target: 'http://localhost:9090',
         changeOrigin: true

@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.Collections;
 import java.util.Optional;
@@ -35,7 +36,16 @@ class ReviewServiceTest {
     private GitDiffService gitDiffService;
 
     @Mock
+    private GitService gitService;
+
+    @Mock
     private ReviewEngine reviewEngine;
+
+    @Mock
+    private DiffFilterService diffFilterService;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private ReviewService reviewService;
@@ -45,7 +55,7 @@ class ReviewServiceTest {
         Project project = Project.builder()
                 .id(1L)
                 .name("TestProject")
-                .repoPath(".")
+                .repoPath("/fake/repo")
                 .language("Java")
                 .build();
 
@@ -56,19 +66,22 @@ class ReviewServiceTest {
                 .fromRef("HEAD~1")
                 .toRef("HEAD")
                 .status("pending")
+                .totalFiles(0)
                 .build();
 
         when(projectService.findById(1L)).thenReturn(Optional.of(project));
+        when(gitService.resolveRepoPath(project)).thenReturn("/fake/repo");
         when(reviewRepository.save(any())).thenReturn(review);
-        when(gitDiffService.extractDiffBetweenCommits(any(), any(), any(), any()))
+        when(gitService.getFilteredDiffBlocks(any(), any(), any(), any(), isNull()))
                 .thenReturn(Collections.emptyList());
-        doNothing().when(reviewEngine).executeReview(any(), any(), any());
+        when(diffFilterService.applyFilters(any(), isNull())).thenReturn(Collections.emptyList());
 
         Review result = reviewService.create(1L, "Code Review", null, null);
 
         assertNotNull(result);
-        assertEquals("pending", result.getStatus());
-        verify(reviewEngine).executeReview(any(), any(), eq("Java"));
+        assertEquals("processing", result.getStatus());
+        verify(reviewRepository, times(2)).save(any());
+        verify(gitService).getFilteredDiffBlocks(eq("/fake/repo"), any(), any(), any(), isNull());
     }
 
     @Test
@@ -137,5 +150,21 @@ class ReviewServiceTest {
 
         assertEquals(404, ex.getCode());
         assertTrue(ex.getMessage().contains("审查不存在"));
+    }
+
+    @Test
+    void delete_shouldDelegateToRepository() {
+        reviewService.delete(1L);
+        verify(reviewRepository).deleteById(1L);
+    }
+
+    @Test
+    void findById_shouldReturnReview_whenExists() {
+        Review review = Review.builder().id(1L).status("completed").build();
+        when(reviewRepository.findById(1L)).thenReturn(Optional.of(review));
+
+        Optional<Review> result = reviewService.findById(1L);
+        assertTrue(result.isPresent());
+        assertEquals("completed", result.get().getStatus());
     }
 }

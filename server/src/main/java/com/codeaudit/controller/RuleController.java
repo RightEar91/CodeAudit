@@ -120,4 +120,29 @@ public class RuleController {
         ruleService.delete(id);
         return Response.ok();
     }
+
+    /**
+     * 获取可用的规则模板包列表
+     */
+    @GetMapping("/templates")
+    public Response<List<Map<String, Object>>> listTemplates() {
+        return Response.ok(ruleService.listTemplates());
+    }
+
+    /**
+     * 一键导入规则模板包
+     * <p>
+     * 请求体：{@code {"templateKey": "java-alibaba"}}
+     *
+     * @return 导入成功的规则列表
+     */
+    @PostMapping("/import-template")
+    public Response<List<Rule>> importTemplate(@RequestBody Map<String, String> body) {
+        String templateKey = body.get("templateKey");
+        if (templateKey == null || templateKey.isBlank()) {
+            throw new BizException("templateKey 不能为空");
+        }
+        List<Rule> rules = ruleService.importTemplate(templateKey);
+        return Response.created(rules);
+    }
 }

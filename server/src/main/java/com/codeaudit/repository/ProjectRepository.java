@@ -32,4 +32,9 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
      * 检查指定仓库路径是否已添加，用于防止重复接入
      */
     boolean existsByRepoPath(String repoPath);
+
+    /**
+     * 检查指定 GitHub 仓库 URL 是否已添加
+     */
+    boolean existsByRepoUrl(String repoUrl);
 }

@@ -1,5 +1,6 @@
 package com.codeaudit.controller;
 
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.data.domain.Page;
@@ -12,13 +13,25 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 
 import com.codeaudit.common.BizException;
 import com.codeaudit.common.Response;
+import com.codeaudit.dto.CreateReviewRequest;
+import com.codeaudit.dto.DiffBlock;
 import com.codeaudit.entity.Issue;
 import com.codeaudit.entity.Review;
+import com.codeaudit.service.GitDiffService;
+import com.codeaudit.service.GitService;
+import com.codeaudit.service.GithubService;
 import com.codeaudit.service.IssueService;
+import com.codeaudit.service.PdfExportService;
 import com.codeaudit.service.ReviewService;
+import com.codeaudit.service.SseService;
 
 /**
  * 审查管理 REST 控制器
@@ -45,10 +58,23 @@ public class ReviewController {
 
     private final ReviewService reviewService;
     private final IssueService issueService;
+    private final PdfExportService pdfExportService;
+    private final GitDiffService gitDiffService;
+    private final GitService gitService;
+    private final GithubService githubService;
+    private final SseService sseService;
 
-    public ReviewController(ReviewService reviewService, IssueService issueService) {
+    public ReviewController(ReviewService reviewService, IssueService issueService,
+                            PdfExportService pdfExportService, GitDiffService gitDiffService,
+                            GitService gitService, GithubService githubService,
+                            SseService sseService) {
         this.reviewService = reviewService;
         this.issueService = issueService;
+        this.pdfExportService = pdfExportService;
+        this.gitDiffService = gitDiffService;
+        this.gitService = gitService;
+        this.githubService = githubService;
+        this.sseService = sseService;
     }
 
     /**
@@ -88,20 +114,22 @@ public class ReviewController {
      */
     @PostMapping("/projects/{projectId}/reviews")
     public Response<Review> createReview(@PathVariable Long projectId,
-                                         @RequestBody Map<String, String> body) {
-        String title = body.getOrDefault("title", "Code Review");
-        String fromRef = body.get("fromRef");
-        String toRef = body.get("toRef");
-        Review review = reviewService.create(projectId, title, fromRef, toRef);
+                                         @RequestBody CreateReviewRequest body) {
+        String title = body.getTitle() != null ? body.getTitle() : "Code Review";
+        String fromRef = body.getFromRef();
+        String toRef = body.getToRef();
+        Review review = reviewService.create(projectId, title, fromRef, toRef, body.getFilters());
         return Response.created(review);
     }
 
     /**
      * 取消进行中的审查（仅 pending/processing 状态可取消）
+     * <p>
+     * 使用 cancelImmediate：取消令牌立即可用，DB 写操作异步不阻塞 HTTP 响应。
      */
     @PostMapping("/reviews/{id}/cancel")
     public Response<Void> cancel(@PathVariable Long id) {
-        reviewService.cancel(id);
+        reviewService.cancelImmediate(id);
         return Response.ok();
     }
 
@@ -137,5 +165,84 @@ public class ReviewController {
                                              @RequestBody Map<String, String> body) {
         Issue issue = issueService.updateStatus(id, body.get("status"));
         return Response.ok(issue);
+    }
+
+    /**
+     * 导出审查报告为 PDF 格式
+     * <p>
+     * 返回 PDF 二进制流，浏览器自动触发下载。
+     * 文件名格式：code-review-{reviewId}.pdf
+     */
+    @GetMapping("/reviews/{id}/export/pdf")
+    public ResponseEntity<byte[]> exportPdf(@PathVariable Long id) {
+        byte[] pdfBytes = pdfExportService.exportReviewPdf(id);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_PDF);
+        headers.setContentDispositionFormData("attachment", "code-review-" + id + ".pdf");
+        headers.setCacheControl("no-cache");
+        return ResponseEntity.ok().headers(headers).body(pdfBytes);
+    }
+
+    /**
+     * 查询审查任务的 diff 变更文件列表，用于报告详情页展示代码高亮
+     * <p>
+     * 根据 Review 记录的 fromRef / toRef 重新提取 diff，
+     * 前端将 Issue 的 filePath 与此列表匹配以展示对应的变更代码。
+     */
+    @GetMapping("/reviews/{id}/diffs")
+    public Response<List<DiffBlock>> getReviewDiffs(@PathVariable Long id) {
+        Review review = reviewService.findById(id)
+                .orElseThrow(() -> new BizException(404, "审查不存在: " + id));
+        String repoPath = gitService.resolveRepoPath(review.getProject());
+        String language = review.getProject().getLanguage() != null
+                ? review.getProject().getLanguage() : "Java";
+        List<DiffBlock> diffBlocks = gitDiffService.extractDiffBetweenCommits(
+                repoPath, review.getFromRef(), review.getToRef(), language);
+        return Response.ok(diffBlocks);
+    }
+
+    /**
+     * 手动在 PR 上发布审查结果评论（Markdown）
+     */
+    @PostMapping("/reviews/{id}/pr-comment")
+    public Response<Map<String, Object>> postPrComment(@PathVariable Long id) {
+        Review review = reviewService.findById(id)
+                .orElseThrow(() -> new BizException(404, "审查不存在: " + id));
+
+        if (review.getPrNumber() == null) {
+            throw new BizException("该审查未关联 PR，无法发布评论");
+        }
+
+        var project = review.getProject();
+        if (project == null || !"GITHUB".equalsIgnoreCase(project.getRepoType())) {
+            throw new BizException("仅 GitHub 项目支持发布 PR 评论");
+        }
+
+        String markdown = githubService.buildReviewSummaryMarkdown(review);
+        String commentUrl = githubService.postPullRequestComment(
+                project.getRepoUrl(), review.getPrNumber(), markdown);
+
+        Map<String, Object> result = Map.of(
+                "commentUrl", commentUrl,
+                "prNumber", review.getPrNumber()
+        );
+        return Response.ok(result);
+    }
+
+    /**
+     * SSE 实时推送审查进度
+     * <p>
+     * 前端通过 EventSource 连接此端点，实时接收审查进度事件。
+     * 事件类型：
+     * <ul>
+     *   <li>{@code connected} — SSE 连接已建立</li>
+     *   <li>{@code progress}  — 审查进度更新（每个文件完成后推送）</li>
+     *   <li>{@code completed} — 审查完成（关闭连接）</li>
+     *   <li>{@code failed}    — 审查失败（关闭连接）</li>
+     * </ul>
+     */
+    @GetMapping(value = "/reviews/{id}/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamProgress(@PathVariable Long id) {
+        return sseService.createEmitter(id);
     }
 }

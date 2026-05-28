@@ -2,20 +2,25 @@ package com.codeaudit.service;
 
 import com.codeaudit.common.BizException;
 import com.codeaudit.dto.DiffBlock;
+import com.codeaudit.dto.ReviewFilter;
 import com.codeaudit.entity.Project;
 import com.codeaudit.entity.Review;
+import com.codeaudit.event.ReviewCreatedEvent;
 import com.codeaudit.repository.ReviewRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * 审查任务管理服务
@@ -41,16 +46,25 @@ public class ReviewService {
     private final ReviewRepository reviewRepository;
     private final ProjectService projectService;
     private final GitDiffService gitDiffService;
+    private final GitService gitService;
     private final ReviewEngine reviewEngine;
+    private final DiffFilterService diffFilterService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ReviewService(ReviewRepository reviewRepository,
                          ProjectService projectService,
                          GitDiffService gitDiffService,
-                         ReviewEngine reviewEngine) {
+                         GitService gitService,
+                         ReviewEngine reviewEngine,
+                         DiffFilterService diffFilterService,
+                         ApplicationEventPublisher eventPublisher) {
         this.reviewRepository = reviewRepository;
         this.projectService = projectService;
         this.gitDiffService = gitDiffService;
+        this.gitService = gitService;
         this.reviewEngine = reviewEngine;
+        this.diffFilterService = diffFilterService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -96,58 +110,105 @@ public class ReviewService {
      */
     @Transactional
     public Review create(Long projectId, String title, String fromRef, String toRef) {
-        // 1. 校验项目存在
+        return create(projectId, title, fromRef, toRef, null, null);
+    }
+
+    /**
+     * 创建审查任务（带 PR 信息，用于 Webhook 触发的 PR 审查）
+     */
+    @Transactional
+    public Review create(Long projectId, String title, String fromRef, String toRef,
+                         Integer prNumber, String prUrl) {
+        return doCreate(projectId, title, fromRef, toRef, prNumber, prUrl, null);
+    }
+
+    /**
+     * 创建审查任务（带过滤条件，支持目录/文件类型/作者/时间段过滤）
+     *
+     * @param projectId 项目 ID
+     * @param title     审查标题
+     * @param fromRef   源引用
+     * @param toRef     目标引用
+     * @param filter    过滤条件（可为 null）
+     * @return 新创建的 Review
+     */
+    @Transactional
+    public Review create(Long projectId, String title, String fromRef, String toRef, ReviewFilter filter) {
+        return doCreate(projectId, title, fromRef, toRef, null, null, filter);
+    }
+
+    /**
+     * 核心创建逻辑：统一处理无过滤/带过滤/PR 三种场景
+     */
+    private Review doCreate(Long projectId, String title, String fromRef, String toRef,
+                            Integer prNumber, String prUrl, ReviewFilter filter) {
         Project project = projectService.findById(projectId)
                 .orElseThrow(() -> new BizException(404, "项目不存在: " + projectId));
 
-        // 2. 创建 pending 状态的 Review
-        Review review = Review.builder()
+        Review.ReviewBuilder builder = Review.builder()
                 .project(project)
                 .title(title)
                 .fromRef(fromRef != null ? fromRef : "HEAD~1")
                 .toRef(toRef != null ? toRef : "HEAD")
-                .status("pending")
-                .build();
+                .status("pending");
+        if (prNumber != null) {
+            builder.prNumber(prNumber).prUrl(prUrl);
+        }
+        Review review = builder.build();
         review = reviewRepository.save(review);
-        log.info("创建审查: reviewId={}, 范围={}..{}", review.getId(), review.getFromRef(), review.getToRef());
+        log.info("创建审查: reviewId={}, 范围={}..{}{}{}",
+                review.getId(), review.getFromRef(), review.getToRef(),
+                prNumber != null ? ", PR=#" + prNumber : "",
+                filter != null && filter.hasAnyFilter() ? ", 含过滤条件" : "");
 
-        // 3. 提取 diff（同步执行，保证合法性校验在返回前完成）
-        List<DiffBlock> diffBlocks = gitDiffService.extractDiffBetweenCommits(
-                project.getRepoPath(), review.getFromRef(), review.getToRef(), project.getLanguage());
+        String effectiveRepoPath = gitService.resolveRepoPath(project);
+        String language = project.getLanguage();
+
+        List<DiffBlock> diffBlocks = gitService.getFilteredDiffBlocks(
+                effectiveRepoPath, review.getFromRef(), review.getToRef(), language, filter);
+
+        diffBlocks = diffFilterService.applyFilters(diffBlocks, filter);
 
         if (diffBlocks.isEmpty()) {
-            log.warn("审查范围内无{}文件变更: reviewId={}", project.getLanguage(), review.getId());
+            log.warn("审查范围内无{}文件变更: reviewId={}", language, review.getId());
         }
 
-        // 3.5 回写文件总数，供前端展示进度（如 3/12 文件）
         review.setTotalFiles(diffBlocks.size());
+        review.setStatus("processing");
         review = reviewRepository.save(review);
 
-        // 4. 注册事务提交后回调：确保 Review 已持久化到 DB 后再触发异步审查
-        final Review finalReview = review;
-        final List<DiffBlock> finalDiffBlocks = diffBlocks;
-        final String language = project.getLanguage();
-        TransactionSynchronizationManager.registerSynchronization(
-                new TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        reviewEngine.executeReview(finalReview, finalDiffBlocks, language);
-                    }
-                });
+        log.info("审查已提交，等待事务提交后异步执行: reviewId={}", review.getId());
+
+        eventPublisher.publishEvent(new ReviewCreatedEvent(review, diffBlocks, language));
 
         return review;
     }
 
     /**
-     * 取消进行中的审查
+     * 监听审查创建事件，在事务提交后异步启动 AI 审查
      * <p>
-     * 仅 pending 或 processing 状态的审查可被取消，
-     * 取消后状态置为 failed 并备注"用户手动取消"。
+     * 使用 @TransactionalEventListener 替代手动的 TransactionSynchronizationManager，
+     * 确保事务成功提交后才触发，避免审查卡在 pending 状态。
+     * <p>
+     * fallbackExecution = true：若因任何原因事务不存在/未提交，也立即执行，以防事件丢失。
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onReviewCreated(ReviewCreatedEvent event) {
+        log.info("事务已提交，启动异步审查: reviewId={}", event.getReview().getId());
+        reviewEngine.executeReview(event.getReview(), event.getDiffBlocks(), event.getLanguage());
+    }
+
+    /**
+     * 取消进行中的审查（立即返回，DB 写操作异步执行）
+     * <p>
+     * 仅 pending 或 processing 状态的审查可被取消。
+     * 先同步设置取消令牌（ConcurrentHashMap 操作，永不阻塞），
+     * 再异步执行数据库状态更新，避免因 DB 锁竞争导致 HTTP 响应超时。
      *
      * @param reviewId 审查 ID
      * @throws BizException 审查不存在时抛出（404）
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void cancel(Long reviewId) {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new BizException(404, "审查不存在: " + reviewId));
@@ -155,10 +216,43 @@ public class ReviewService {
             review.setStatus("failed");
             review.setErrorMessage("用户手动取消");
             reviewRepository.save(review);
+            reviewEngine.requestCancellation(reviewId);
             log.info("审查已取消: reviewId={}", reviewId);
         } else {
             throw new BizException("当前状态不可取消: " + review.getStatus());
         }
+    }
+
+    /**
+     * 立即取消审查（非事务版本，用于 REST 端点立即返回）
+     * <p>
+     * 先同步读取并校验状态，设置取消令牌（永不阻塞），
+     * 将 DB 写操作提交到 ForkJoinPool 异步执行。
+     * 即使 DB 写失败，executeReview 也会在结束时检测到 isCancelled=true 并保持 failed 状态。
+     */
+    public void cancelImmediate(Long reviewId) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new BizException(404, "审查不存在: " + reviewId));
+        String status = review.getStatus();
+        if (!"processing".equals(status) && !"pending".equals(status)) {
+            throw new BizException("当前状态不可取消: " + status);
+        }
+        reviewEngine.requestCancellation(reviewId);
+        log.info("审查取消令牌已设置: reviewId={}", reviewId);
+
+        CompletableFuture.runAsync(() -> {
+            try {
+                Review latest = reviewRepository.findById(reviewId).orElse(null);
+                if (latest != null && ("processing".equals(latest.getStatus()) || "pending".equals(latest.getStatus()))) {
+                    latest.setStatus("failed");
+                    latest.setErrorMessage("用户手动取消");
+                    reviewRepository.save(latest);
+                    log.info("审查状态已更新为 failed: reviewId={}", reviewId);
+                }
+            } catch (Exception e) {
+                log.warn("异步更新审查状态失败（不影响取消效果）: reviewId={}, error={}", reviewId, e.getMessage());
+            }
+        });
     }
 
     /**

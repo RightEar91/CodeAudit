@@ -16,5 +16,11 @@ Desktop.ini
 *.log
 
 # Environment (local config)
+.env
 .env.local
 .env.*.local
+application-local.yml
+*-local.yml
+
+# Design docs
+doc/

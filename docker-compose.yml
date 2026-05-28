@@ -1,0 +1,70 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: codeaudit-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-codeaudit123}
+      MYSQL_DATABASE: codeaudit
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-codeaudit123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: codeaudit-backend
+    environment:
+      SERVER_PORT: 9090
+      MYSQL_URL: jdbc:mysql://mysql:3306/codeaudit?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&characterEncoding=utf8mb4
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-codeaudit123}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.1}
+      OLLAMA_TOP_P: ${OLLAMA_TOP_P:-0.9}
+      CODEAUDIT_AI_PROVIDER: ${CODEAUDIT_AI_PROVIDER:-ollama}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.1}
+      CODEAUDIT_REVIEW_THINKING_ENABLED: ${CODEAUDIT_REVIEW_THINKING_ENABLED:-true}
+      CODEAUDIT_REVIEW_PARALLELISM: ${CODEAUDIT_REVIEW_PARALLELISM:-2}
+      JWT_SECRET: ${JWT_SECRET:-CodeAudit-Docker-JWT-Secret-Must-Be-At-Least-256-Bits}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_CLONE_BASE_DIR: /data/repos
+    ports:
+      - "9090:9090"
+    volumes:
+      - backend_repos:/data/repos
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: codeaudit-frontend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+  backend_repos:

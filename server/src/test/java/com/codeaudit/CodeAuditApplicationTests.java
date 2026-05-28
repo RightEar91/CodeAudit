@@ -2,6 +2,7 @@ package com.codeaudit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 
 /**
  * 应用启动测试
@@ -11,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
  * @author CodeAudit Team
  */
 @SpringBootTest
+@Import(TestAiChatConfig.class)
 class CodeAuditApplicationTests {
 
     @Test

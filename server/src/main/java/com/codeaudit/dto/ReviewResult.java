@@ -29,6 +29,13 @@ public record ReviewResult(
             String category,
             Integer line,
             String message,
-            String suggestion
-    ) {}
+            String suggestion,
+            Integer modelCount,
+            Integer totalModelCount,
+            String models
+    ) {
+        public IssueItem(String severity, String category, Integer line, String message, String suggestion) {
+            this(severity, category, line, message, suggestion, 1, 1, "default");
+        }
+    }
 }
