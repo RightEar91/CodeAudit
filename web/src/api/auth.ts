@@ -21,13 +21,13 @@ export interface UserInfo {
 }
 
 export function login(data: LoginRequest) {
-  return api.post<unknown, UserInfo>('/auth/login', data)
+  return api.post<unknown, { data: UserInfo }>('/auth/login', data)
 }
 
 export function register(data: RegisterRequest) {
-  return api.post<unknown, UserInfo>('/auth/register', data)
+  return api.post<unknown, { data: UserInfo }>('/auth/register', data)
 }
 
 export function getCurrentUser() {
-  return api.get<unknown, UserInfo>('/auth/me')
+  return api.get<unknown, { data: UserInfo }>('/auth/me')
 }

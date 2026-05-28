@@ -142,7 +142,7 @@ async function handleExportExcel() {
     const config: any = { responseType: 'blob' }
     if (days.value > 0) config.params = { days: days.value }
     const res = await api.get(`/projects/${projectId.value}/statistics/excel`, config)
-    const url = URL.createObjectURL(res)
+    const url = URL.createObjectURL(res as unknown as Blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `codeaudit-statistics-${projectId.value}.xlsx`
