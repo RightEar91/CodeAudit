@@ -17,14 +17,11 @@ import java.util.Optional;
 /**
  * 项目管理服务
  * <p>
- * 提供项目的 CRUD 操作，并在添加/更新项目时校验 Git 仓库路径的有效性。
- * 校验规则：
+ * 提供项目的 CRUD 操作，支持两种仓库类型：
  * <ul>
- *   <li>路径必须存在且为目录</li>
- *   <li>路径下必须包含 .git 子目录（即必须是有效的 Git 仓库）</li>
- *   <li>不允许重复添加同一路径</li>
+ *   <li><b>LOCAL</b> — 本地 Git 仓库，校验路径是否存在及是否为有效 Git 仓库</li>
+ *   <li><b>GITHUB</b> — GitHub 远程仓库，校验 URL 格式及 Token 有效性，并自动 clone 到本地缓存</li>
  * </ul>
- * <p>
  * 所有业务校验失败均抛出 {@link BizException}，由全局异常处理器统一转换为 Response 响应。
  *
  * @author CodeAudit Team
@@ -35,9 +32,11 @@ public class ProjectService {
     private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
 
     private final ProjectRepository projectRepository;
+    private final GithubService githubService;
 
-    public ProjectService(ProjectRepository projectRepository) {
+    public ProjectService(ProjectRepository projectRepository, GithubService githubService) {
         this.projectRepository = projectRepository;
+        this.githubService = githubService;
     }
 
     /**
@@ -78,20 +77,48 @@ public class ProjectService {
     /**
      * 添加新项目
      * <p>
-     * 执行前会校验仓库路径有效性并检查是否重复。
+     * 根据 repoType 执行不同的校验逻辑：
+     * <ul>
+     *   <li>LOCAL  — 校验本地路径有效性并检查是否重复</li>
+     *   <li>GITHUB — 校验 URL 格式及 Token，然后 clone 到本地缓存并写入 repoPath</li>
+     * </ul>
      *
-     * @param project 项目实体（name / repoPath 必填）
-     * @return 保存后的项目实体（含自动生成的 ID）
+     * @param project 项目实体（name / repoPath 或 repoUrl 必填）
+     * @return 保存后的项目实体（含自动生成的 ID，repoPath 已指向本地路径）
      * @throws BizException 路径无效或已存在时抛出（400）
      */
     @Transactional
     public Project create(Project project) {
-        validateRepoPath(project.getRepoPath());
-        if (projectRepository.existsByRepoPath(project.getRepoPath())) {
-            throw new BizException("该仓库路径已添加：" + project.getRepoPath());
+        String repoType = project.getRepoType() != null ? project.getRepoType() : "LOCAL";
+
+        if ("GITHUB".equalsIgnoreCase(repoType)) {
+            project.setRepoType("GITHUB");
+            String url = project.getRepoUrl();
+            if (url == null || url.isBlank()) {
+                throw new BizException("GitHub 仓库地址不能为空");
+            }
+            githubService.validateRepository(url, githubService.getGithubToken());
+            if (projectRepository.existsByRepoUrl(url)) {
+                throw new BizException("该 GitHub 仓库已添加：" + url);
+            }
+            project = projectRepository.save(project);
+
+            String localPath = githubService.cloneRepository(project);
+            project.setRepoPath(localPath);
+            project = projectRepository.save(project);
+
+            log.info("添加 GitHub 项目: {} ({}), 缓存路径: {}", project.getName(), url, localPath);
+        } else {
+            project.setRepoType("LOCAL");
+            validateLocalRepoPath(project.getRepoPath());
+            if (projectRepository.existsByRepoPath(project.getRepoPath())) {
+                throw new BizException("该仓库路径已添加：" + project.getRepoPath());
+            }
+            project = projectRepository.save(project);
+            log.info("添加本地项目: {} ({})", project.getName(), project.getRepoPath());
         }
-        log.info("添加项目: {} ({})", project.getName(), project.getRepoPath());
-        return projectRepository.save(project);
+
+        return project;
     }
 
     /**
@@ -112,7 +139,7 @@ public class ProjectService {
             project.setName(updated.getName());
         }
         if (updated.getRepoPath() != null) {
-            validateRepoPath(updated.getRepoPath());
+            validateLocalRepoPath(updated.getRepoPath());
             if (!updated.getRepoPath().equals(project.getRepoPath())
                     && projectRepository.existsByRepoPath(updated.getRepoPath())) {
                 throw new BizException("该仓库路径已被其他项目使用：" + updated.getRepoPath());
@@ -142,7 +169,7 @@ public class ProjectService {
     }
 
     /**
-     * 校验仓库路径有效性：
+     * 校验本地仓库路径有效性：
      * <ol>
      *   <li>路径指向的目录必须存在</li>
      *   <li>目录下必须包含 .git 子目录</li>
@@ -150,7 +177,10 @@ public class ProjectService {
      *
      * @throws BizException 路径无效时抛出（400）
      */
-    private void validateRepoPath(String repoPath) {
+    private void validateLocalRepoPath(String repoPath) {
+        if (repoPath == null || repoPath.isBlank()) {
+            throw new BizException("仓库路径不能为空");
+        }
         File repoDir = new File(repoPath);
         if (!repoDir.exists() || !repoDir.isDirectory()) {
             throw new BizException("仓库路径不存在或不是目录：" + repoPath);

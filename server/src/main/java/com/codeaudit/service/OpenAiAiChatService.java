@@ -5,12 +5,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
-import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,12 +57,9 @@ public class OpenAiAiChatService implements AiChatService {
         if (cachedRestClient == null || !Objects.equals(cachedBaseUrl, baseUrl) || !Objects.equals(cachedApiKey, apiKey)) {
             synchronized (this) {
                 if (cachedRestClient == null || !Objects.equals(cachedBaseUrl, baseUrl) || !Objects.equals(cachedApiKey, apiKey)) {
-                    HttpClient httpClient = HttpClient.newBuilder()
-                            .connectTimeout(Duration.ofSeconds(30))
-                            .build();
-
-                    JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
-                    requestFactory.setReadTimeout(Duration.ofSeconds(60));
+                    SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+                    requestFactory.setConnectTimeout(Duration.ofSeconds(15));
+                    requestFactory.setReadTimeout(Duration.ofSeconds(90));
 
                     this.cachedRestClient = RestClient.builder()
                             .baseUrl(baseUrl)

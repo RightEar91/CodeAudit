@@ -1,5 +1,6 @@
 package com.codeaudit.service;
 
+import com.codeaudit.common.BizException;
 import com.codeaudit.dto.DiffBlock;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffFormatter;
@@ -19,7 +20,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Git Diff 提取服务 — 基于 JGit 操作本地 Git 仓库
@@ -65,7 +68,16 @@ public class GitDiffService {
             ObjectId fromId = resolveCommit(repository, fromCommit);
             ObjectId toId = resolveCommit(repository, toCommit);
 
-            // 3. 构建 diff 输出器（使用 RevWalk 解析 commit，避免 parseCommit 缓存泄漏）
+            // 3. 校验引用拓扑顺序：toRef 不应是 fromRef 的祖先（避免逆向 diff）
+            try (RevWalk topoWalk = new RevWalk(repository)) {
+                RevCommit fromCommitParsed = topoWalk.parseCommit(fromId);
+                RevCommit toCommitParsed = topoWalk.parseCommit(toId);
+                if (topoWalk.isMergedInto(toCommitParsed, fromCommitParsed)) {
+                    throw new BizException("源引用（fromRef）不应比目标引用（toRef）更新，请交换两者顺序");
+                }
+            }
+
+            // 4. 构建 diff 输出器（使用 RevWalk 解析 commit，避免 parseCommit 缓存泄漏）
             try (ObjectReader reader = repository.newObjectReader();
                  RevWalk revWalk = new RevWalk(repository);
                  ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -73,7 +85,7 @@ public class GitDiffService {
 
                 formatter.setRepository(repository);
 
-                // 4. 构建 oldTree（源）和 newTree（目标）
+                // 5. 构建 oldTree（源）和 newTree（目标）
                 CanonicalTreeParser oldTreeIter = new CanonicalTreeParser();
                 RevCommit fromCommitObj = revWalk.parseCommit(fromId);
                 oldTreeIter.reset(reader, fromCommitObj.getTree().getId());
@@ -82,10 +94,10 @@ public class GitDiffService {
                 RevCommit toCommitObj = revWalk.parseCommit(toId);
                 newTreeIter.reset(reader, toCommitObj.getTree().getId());
 
-                // 5. 获取变更文件列表
+                // 6. 获取变更文件列表
                 List<DiffEntry> diffs = formatter.scan(oldTreeIter, newTreeIter);
 
-                // 6. 逐个文件提取 diff 内容
+                // 7. 逐个文件提取 diff 内容
                 for (DiffEntry entry : diffs) {
                     // 根据语言过滤文件类型
                     if (!shouldIncludeFile(entry.getNewPath(), entry.getOldPath(), language)) {
@@ -158,6 +170,89 @@ public class GitDiffService {
     }
 
     /**
+     * 按 commit 逐一提取 diff，按文件路径去重（保留最新变更）
+     * <p>
+     * 用于作者/时间段过滤场景：先按条件筛选 commit 列表，
+     * 再对每个 commit 提取其 parent 之间的 diff。
+     * 同一文件多次变更时，后出现的 DiffBlock 覆盖前者。
+     *
+     * @param repoPath  本地 Git 仓库绝对路径
+     * @param commits   待提取 diff 的 RevCommit 列表
+     * @param language  项目编程语言
+     * @return 去重后的 DiffBlock 列表
+     */
+    public List<DiffBlock> extractDiffForCommits(String repoPath, List<RevCommit> commits, String language) {
+        Map<String, DiffBlock> fileMap = new LinkedHashMap<>();
+
+        for (RevCommit commit : commits) {
+            List<DiffBlock> commitDiffs = extractDiffForSingleCommit(repoPath, commit, language);
+            for (DiffBlock block : commitDiffs) {
+                fileMap.put(block.filePath(), block);
+            }
+        }
+
+        return new ArrayList<>(fileMap.values());
+    }
+
+    /**
+     * 提取单个 commit 与其父 commit 之间的 diff
+     */
+    private List<DiffBlock> extractDiffForSingleCommit(String repoPath, RevCommit commit, String language) {
+        List<DiffBlock> diffBlocks = new ArrayList<>();
+        if (commit.getParentCount() == 0) {
+            return diffBlocks;
+        }
+
+        File repoDir = new File(repoPath);
+        try (Repository repository = new FileRepositoryBuilder()
+                .setGitDir(new File(repoDir, ".git"))
+                .readEnvironment()
+                .build();
+             ObjectReader reader = repository.newObjectReader();
+             RevWalk revWalk = new RevWalk(repository);
+             ByteArrayOutputStream out = new ByteArrayOutputStream();
+             DiffFormatter formatter = new DiffFormatter(out)) {
+
+            formatter.setRepository(repository);
+
+            RevCommit parent = revWalk.parseCommit(commit.getParent(0).getId());
+            CanonicalTreeParser oldTreeIter = new CanonicalTreeParser();
+            oldTreeIter.reset(reader, parent.getTree().getId());
+
+            CanonicalTreeParser newTreeIter = new CanonicalTreeParser();
+            newTreeIter.reset(reader, commit.getTree().getId());
+
+            List<DiffEntry> diffs = formatter.scan(oldTreeIter, newTreeIter);
+
+            for (DiffEntry entry : diffs) {
+                if (!shouldIncludeFile(entry.getNewPath(), entry.getOldPath(), language)) {
+                    continue;
+                }
+
+                formatter.format(entry);
+                String diffContent = out.toString(StandardCharsets.UTF_8);
+                out.reset();
+
+                String filePath = getFilePath(entry);
+                diffContent = cleanDiffHeader(diffContent, filePath);
+
+                DiffBlock block = new DiffBlock(
+                        filePath,
+                        entry.getChangeType().name(),
+                        countAddedLines(diffContent),
+                        countRemovedLines(diffContent),
+                        diffContent
+                );
+                diffBlocks.add(block);
+            }
+        } catch (IOException e) {
+            log.warn("提取 commit {} 的 diff 失败: {}", commit.getId().abbreviate(7).name(), e.getMessage());
+        }
+
+        return diffBlocks;
+    }
+
+    /**
      * 根据语言决定是否包含该文件
      */
     private boolean shouldIncludeFile(String newPath, String oldPath, String language) {
@@ -172,10 +267,17 @@ public class GitDiffService {
             case "typescript" ->
                     newPath.endsWith(".ts") || oldPath.endsWith(".ts") ||
                     newPath.endsWith(".tsx") || oldPath.endsWith(".tsx");
+            case "kotlin" ->
+                    newPath.endsWith(".kt") || oldPath.endsWith(".kt") ||
+                    newPath.endsWith(".kts") || oldPath.endsWith(".kts");
+            case "rust" -> newPath.endsWith(".rs") || oldPath.endsWith(".rs");
             case "c", "c++", "cpp" ->
                     newPath.endsWith(".c") || oldPath.endsWith(".c") ||
                     newPath.endsWith(".cpp") || oldPath.endsWith(".cpp") ||
-                    newPath.endsWith(".h") || oldPath.endsWith(".h");
+                    newPath.endsWith(".cc") || oldPath.endsWith(".cc") ||
+                    newPath.endsWith(".cxx") || oldPath.endsWith(".cxx") ||
+                    newPath.endsWith(".h") || oldPath.endsWith(".h") ||
+                    newPath.endsWith(".hpp") || oldPath.endsWith(".hpp");
             default -> true;
         };
     }

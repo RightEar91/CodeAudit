@@ -27,8 +27,12 @@ import lombok.NoArgsConstructor;
 /**
  * 项目实体 — 对应数据库表 ca_projects
  * <p>
- * 每个项目代表一个接入 CodeAudit 的本地 Git 仓库。
- * 添加项目时系统会校验路径是否存在且为有效 Git 仓库。
+ * 每个项目代表一个接入 CodeAudit 的 Git 仓库（支持本地仓库和远程 GitHub 仓库）。
+ * 添加项目时系统会校验路径/URL 有效性：
+ * <ul>
+ *   <li>LOCAL  — 校验本地路径是否为有效 Git 仓库</li>
+ *   <li>GITHUB — 校验 URL 格式及 Token 有效性，并 clone 到本地缓存</li>
+ * </ul>
  *
  * @author CodeAudit Team
  */
@@ -49,9 +53,24 @@ public class Project {
     @Column(nullable = false, length = 200)
     private String name;
 
-    /** 本地 Git 仓库绝对路径（如 E:/projects/my-app） */
+    /**
+     * 仓库类型：
+     * <ul>
+     *   <li>{@code LOCAL}  — 本地 Git 仓库（repoPath 为本地绝对路径）</li>
+     *   <li>{@code GITHUB} — GitHub 远程仓库（repoPath 为本地缓存路径，repoUrl 为 GitHub 地址）</li>
+     * </ul>
+     */
+    @Column(name = "repo_type", nullable = false, length = 20)
+    @Builder.Default
+    private String repoType = "LOCAL";
+
+    /** 本地 Git 仓库绝对路径（如 E:/projects/my-app），或 GitHub 仓库 clone 后的本地缓存路径 */
     @Column(name = "repo_path", nullable = false, length = 500)
     private String repoPath;
+
+    /** GitHub 仓库 URL（仅 GITHUB 类型使用，如 https://github.com/user/repo.git） */
+    @Column(name = "repo_url", length = 500)
+    private String repoUrl;
 
     /** 仓库当前活跃分支 */
     @Column(name = "current_branch", length = 200)

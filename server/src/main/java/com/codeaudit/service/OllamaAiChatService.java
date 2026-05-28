@@ -40,4 +40,16 @@ public class OllamaAiChatService implements AiChatService {
                 .call()
                 .content();
     }
+
+    /**
+     * Call Ollama with a specific model name, used by multi-model comparison.
+     */
+    public String chatWithModel(String prompt, String modelName) {
+        log.debug("多模型审查 - 调用: {}", modelName);
+        return chatClient.prompt()
+                .user(prompt)
+                .options(OllamaOptions.builder().model(modelName).build())
+                .call()
+                .content();
+    }
 }

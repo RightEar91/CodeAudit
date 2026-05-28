@@ -76,10 +76,12 @@ class OpenAiAiChatServiceTest {
                 }
                 """;
 
-        mockWebServer.enqueue(new MockResponse()
-                .setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(jsonResponse));
+        for (int i = 0; i < 3; i++) {
+            mockWebServer.enqueue(new MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(jsonResponse));
+        }
 
         String baseUrl = mockWebServer.url("").toString().replaceAll("/$", "");
         AiConfigService config = mockConfig(baseUrl, "fake-api-key", "gpt-4o", 0.1);
@@ -87,7 +89,7 @@ class OpenAiAiChatServiceTest {
 
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> service.chat("Review this code"));
-        assertTrue(ex.getMessage().contains("空 choices"));
+        assertTrue(ex.getMessage().contains("API 调用失败"));
     }
 
     @Test
@@ -96,10 +98,12 @@ class OpenAiAiChatServiceTest {
                 {"error": "invalid_api_key"}
                 """;
 
-        mockWebServer.enqueue(new MockResponse()
-                .setResponseCode(200)
-                .setHeader("Content-Type", "application/json")
-                .setBody(jsonResponse));
+        for (int i = 0; i < 3; i++) {
+            mockWebServer.enqueue(new MockResponse()
+                    .setResponseCode(200)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(jsonResponse));
+        }
 
         String baseUrl = mockWebServer.url("").toString().replaceAll("/$", "");
         AiConfigService config = mockConfig(baseUrl, "fake-api-key", "gpt-4o", 0.1);
@@ -107,7 +111,7 @@ class OpenAiAiChatServiceTest {
 
         RuntimeException ex = assertThrows(RuntimeException.class,
                 () -> service.chat("Review this code"));
-        assertTrue(ex.getMessage().contains("返回异常"));
+        assertTrue(ex.getMessage().contains("API 调用失败"));
     }
 
     private static AiConfigService mockConfig(String baseUrl, String apiKey, String model, double temperature) {

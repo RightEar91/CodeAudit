@@ -41,3 +41,19 @@ export function toggleRule(id: number, isEnabled: boolean) {
 export function deleteRule(id: number) {
   return api.delete(`/rules/${id}`)
 }
+
+export interface RuleTemplate {
+  key: string
+  name: string
+  description: string
+  ruleCount: number
+  language: string
+}
+
+export function listRuleTemplates() {
+  return api.get<any, { data: RuleTemplate[] }>('/rules/templates')
+}
+
+export function importRuleTemplate(templateKey: string) {
+  return api.post<any, { code: number; data: Rule[] }>('/rules/import-template', { templateKey })
+}

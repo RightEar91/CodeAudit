@@ -4,7 +4,9 @@ import type { PageResult } from './types'
 export interface Project {
   id?: number
   name: string
-  repoPath: string
+  repoType?: string
+  repoPath?: string
+  repoUrl?: string
   currentBranch?: string
   language?: string
   createdAt?: string

@@ -21,9 +21,9 @@ spring:
         one-indexed-parameters: false
 
   datasource:
-    url: ${MYSQL_URL}
-    username: ${MYSQL_USERNAME}
-    password: ${MYSQL_PASSWORD}
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/codeaudit?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:codeaudit123}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -36,19 +36,32 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.MySQLDialect
 
+  # 邮件配置
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
   ai:
     ollama:
-      base-url: ${OLLAMA_BASE_URL}
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
       chat:
-        model: ${OLLAMA_MODEL}
+        model: ${OLLAMA_MODEL:qwen3:8b}
         options:
-          temperature: ${OLLAMA_TEMPERATURE}
-          top-p: ${OLLAMA_TOP_P}
+          temperature: ${OLLAMA_TEMPERATURE:0.1}
+          top-p: ${OLLAMA_TOP_P:0.9}
 
 # AI 模型提供商配置
 codeaudit:
   ai:
-    provider: ollama  # 可选: ollama / openai
+    provider: ${CODEAUDIT_AI_PROVIDER:ollama}  # ollama / openai
     openai:
       api-key: ${OPENAI_API_KEY:}
       base-url: ${OPENAI_BASE_URL:https://api.openai.com}
@@ -58,8 +71,30 @@ codeaudit:
     review:
       thinking-enabled: ${CODEAUDIT_REVIEW_THINKING_ENABLED:true}
       parallelism: ${CODEAUDIT_REVIEW_PARALLELISM:2}
+  jwt:
+    secret: ${JWT_SECRET:CodeAudit-JWT-Secret-Key-Must-Be-At-Least-256-Bits-Long}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  # GitHub 远程仓库配置
+  github:
+    token: ${GITHUB_TOKEN:}
+    clone-base-dir: ${GITHUB_CLONE_BASE_DIR:${user.home}/.codeaudit/repos}
+    webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
+    ssl-verify: ${CODEAUDIT_GITHUB_SSL_VERIFY:true}
+  # 通知系统配置
+  notification:
+    email:
+      enabled: ${NOTIFY_EMAIL_ENABLED:false}
+      to: ${NOTIFY_EMAIL_TO:}
+    wework:
+      webhook: ${NOTIFY_WECOM_WEBHOOK:}
+    dingtalk:
+      webhook: ${NOTIFY_DINGTALK_WEBHOOK:}
+    feishu:
+      webhook: ${NOTIFY_FEISHU_WEBHOOK:}
 
 logging:
   level:
     com.codeaudit: DEBUG
     org.springframework.ai: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.web: DEBUG

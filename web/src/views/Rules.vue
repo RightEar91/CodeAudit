@@ -8,13 +8,20 @@ import {
   updateRule,
   toggleRule,
   deleteRule,
-  type Rule
+  listRuleTemplates,
+  importRuleTemplate,
+  type Rule,
+  type RuleTemplate
 } from '@/api/rules'
 import type { PageResult } from '@/api/types'
 
 const rules = ref<Rule[]>([])
 const loading = ref(false)
 const categoryFilter = ref('')
+const templateDialogVisible = ref(false)
+const templates = ref<RuleTemplate[]>([])
+const templateLoading = ref(false)
+const importingKey = ref<string | null>(null)
 const dialogVisible = ref(false)
 const isEditing = ref(false)
 const editingId = ref<number | null>(null)
@@ -36,7 +43,7 @@ const categoryOptions = [
   { label: '潜在缺陷', value: 'BUG' }
 ]
 
-const languageOptions = ['Java', 'Python', 'Go', 'JavaScript']
+const languageOptions = ['Java', 'Python', 'Go', 'JavaScript', 'TypeScript', 'Kotlin', 'Rust', 'C']
 
 const categoryLabel = (category: string) => {
   const opt = categoryOptions.find(o => o.value === category)
@@ -146,6 +153,36 @@ async function handleDelete(rule: Rule) {
   }
 }
 
+async function openTemplateDialog() {
+  templateDialogVisible.value = true
+  if (templates.value.length === 0) {
+    templateLoading.value = true
+    try {
+      const res = await listRuleTemplates()
+      templates.value = res.data
+    } catch (e) {
+      console.error('Failed to fetch templates:', e)
+    } finally {
+      templateLoading.value = false
+    }
+  }
+}
+
+async function handleImportTemplate(templateKey: string) {
+  importingKey.value = templateKey
+  try {
+    await importRuleTemplate(templateKey)
+    const template = templates.value.find(t => t.key === templateKey)
+    ElMessage.success(`模板「${template?.name || templateKey}」导入成功`)
+    importingKey.value = null
+    templateDialogVisible.value = false
+    await fetchRules()
+  } catch (e) {
+    console.error('Failed to import template:', e)
+    importingKey.value = null
+  }
+}
+
 onMounted(fetchRules)
 </script>
 
@@ -157,9 +194,14 @@ onMounted(fetchRules)
           <h1 class="page-title">审查规则</h1>
           <p class="page-subtitle">管理 AI 审查规则，自定义团队编码规范</p>
         </div>
-        <el-button type="primary" :icon="Plus" @click="openCreate" round>
-          新建规则
-        </el-button>
+        <div style="display: flex; gap: 8px;">
+          <el-button type="primary" :icon="Plus" @click="openCreate" round>
+            新建规则
+          </el-button>
+          <el-button :icon="Plus" @click="openTemplateDialog" round>
+            导入模板
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -260,12 +302,94 @@ onMounted(fetchRules)
         </el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="templateDialogVisible"
+      title="导入规则模板"
+      width="600px"
+      :close-on-click-modal="false"
+    >
+      <div v-loading="templateLoading" style="min-height: 120px;">
+        <p style="margin: 0 0 16px; color: var(--color-text-secondary); font-size: 13px;">
+          选择一个规则模板包，一键导入到当前规则库中。导入的规则可自由启用/禁用和删除。
+        </p>
+        <div v-if="templates.length > 0" class="template-list">
+          <div
+            v-for="tmpl in templates"
+            :key="tmpl.key"
+            class="template-item"
+          >
+            <div class="template-info">
+              <h4>{{ tmpl.name }}</h4>
+              <p>{{ tmpl.description }}</p>
+              <div class="template-meta">
+                <el-tag size="small" type="info" effect="plain">{{ tmpl.language }}</el-tag>
+                <span class="template-count">{{ tmpl.ruleCount }} 条规则</span>
+              </div>
+            </div>
+            <el-button
+              type="primary"
+              size="small"
+              :loading="importingKey === tmpl.key"
+              @click="handleImportTemplate(tmpl.key)"
+            >
+              导入
+            </el-button>
+          </div>
+        </div>
+        <div v-else-if="!templateLoading" class="empty-state" style="padding: 20px 0;">
+          <p>暂无可用模板</p>
+        </div>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .filter-bar {
   margin-bottom: 16px;
+}
+
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.template-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+}
+
+.template-info h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.template-info p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.template-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.template-count {
+  font-size: 12px;
+  color: var(--color-text-muted);
 }
 
 .rules-list {

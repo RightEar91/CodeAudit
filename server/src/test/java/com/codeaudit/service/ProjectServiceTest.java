@@ -30,6 +30,9 @@ class ProjectServiceTest {
     @Mock
     private ProjectRepository projectRepository;
 
+    @Mock
+    private GithubService githubService;
+
     @InjectMocks
     private ProjectService projectService;
 
