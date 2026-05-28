@@ -2,6 +2,7 @@ package com.codeaudit.controller;
 
 import com.codeaudit.common.Response;
 import com.codeaudit.service.AiConfigService;
+import com.codeaudit.service.GithubService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -39,22 +40,34 @@ public class SettingsController {
     private static final Logger log = LoggerFactory.getLogger(SettingsController.class);
 
     private final AiConfigService config;
+    private final GithubService githubService;
     private final ObjectMapper objectMapper;
 
-    public SettingsController(AiConfigService config, ObjectMapper objectMapper) {
+    public SettingsController(AiConfigService config, GithubService githubService, ObjectMapper objectMapper) {
         this.config = config;
+        this.githubService = githubService;
         this.objectMapper = objectMapper;
     }
 
     @GetMapping("/settings")
     public Response<Map<String, Object>> getSettings() {
-        return Response.ok(config.toMap());
+        Map<String, Object> settings = config.toMap();
+        settings.put("githubToken", githubService.getGithubToken() != null ? "***" : "");
+        return Response.ok(settings);
     }
 
     @PutMapping("/settings")
     public Response<Map<String, Object>> saveSettings(@RequestBody Map<String, Object> body) {
         config.updateFromMap(body);
-        return Response.ok(config.toMap());
+        if (body.containsKey("githubToken") && body.get("githubToken") != null) {
+            String token = body.get("githubToken").toString();
+            if (!token.isBlank() && !"***".equals(token)) {
+                githubService.setGithubToken(token);
+            }
+        }
+        Map<String, Object> settings = config.toMap();
+        settings.put("githubToken", githubService.getGithubToken() != null ? "***" : "");
+        return Response.ok(settings);
     }
 
     @GetMapping("/ollama/check")

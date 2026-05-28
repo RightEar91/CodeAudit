@@ -67,18 +67,14 @@ function navigate(path: string) {
         </div>
       </nav>
 
-      <div class="sidebar-footer" @click="isCollapsed = !isCollapsed" v-show="!isCollapsed">
+      <div class="sidebar-footer" :class="{ 'justify-center': isCollapsed }" @click="isCollapsed = !isCollapsed">
         <el-icon :size="16"><DataAnalysis /></el-icon>
-        <span>收起菜单</span>
+        <span v-show="!isCollapsed">收起菜单</span>
       </div>
     </aside>
 
     <main class="main-content">
-      <router-view v-slot="{ Component }">
-        <transition name="fade-slide" mode="out-in">
-          <component :is="Component" />
-        </transition>
-      </router-view>
+      <slot />
     </main>
   </div>
 </template>
@@ -180,6 +176,10 @@ function navigate(path: string) {
 
 .sidebar-footer:hover {
   color: #e2e8f0;
+}
+
+.sidebar-footer.justify-center {
+  justify-content: center;
 }
 
 .main-content {

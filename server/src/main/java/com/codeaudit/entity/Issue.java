@@ -88,6 +88,29 @@ public class Issue {
     @Builder.Default
     private String status = "open";
 
+    /** 代码作者姓名（通过 git blame 自动关联） */
+    @Column(name = "author_name", length = 200)
+    private String authorName;
+
+    /** 代码作者邮箱（通过 git blame 自动关联） */
+    @Column(name = "author_email", length = 300)
+    private String authorEmail;
+
+    /** 多模型共识度：认同此问题的模型数 */
+    @Column(name = "model_count")
+    @Builder.Default
+    private Integer modelCount = 1;
+
+    /** 多模型共识度：参与审查的模型总数 */
+    @Column(name = "total_model_count")
+    @Builder.Default
+    private Integer totalModelCount = 1;
+
+    /** 认同此问题的模型名称（逗号分隔） */
+    @Column(length = 500)
+    @Builder.Default
+    private String models = "default";
+
     /** 创建时间（自动填充） */
     @Column(name = "created_at", updatable = false)
     @CreatedDate

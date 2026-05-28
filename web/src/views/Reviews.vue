@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus, ArrowLeft, ArrowRight, ArrowDown, CircleCheck, CircleClose, Loading, Clock, VideoPlay,
-  Search, DocumentAdd, DocumentDelete, Edit
+  Search, DocumentAdd, DocumentDelete, Edit, TrendCharts
 } from '@element-plus/icons-vue'
 import {
   listReviews,
@@ -39,8 +39,16 @@ const submitting = ref(false)
 const form = ref({
   title: 'Code Review',
   fromRef: 'HEAD~1',
-  toRef: 'HEAD'
+  toRef: 'HEAD',
+  includePaths: '',
+  excludePaths: '',
+  includeExtensions: '',
+  authorEmail: '',
+  since: '',
+  until: ''
 })
+
+const showFilters = ref(false)
 
 const branches = ref<BranchInfo[]>([])
 const commits = ref<CommitInfo[]>([])
@@ -49,7 +57,7 @@ const previewLoading = ref(false)
 const refsLoading = ref(false)
 const expandedFile = ref<string | null>(null)
 
-let pollTimer: ReturnType<typeof setInterval> | null = null
+const sseConnections = new Map<number, EventSource>()
 
 const refOptions = computed(() => {
   const options: { label: string; options: { value: string; label: string }[] }[] = []
@@ -128,6 +136,7 @@ function toggleFile(filePath: string) {
 
 function openDialog() {
   dialogVisible.value = true
+  showFilters.value = false
   diffBlocks.value = []
   expandedFile.value = null
   fetchRefs()
@@ -263,17 +272,33 @@ watch(dialogVisible, (val) => {
 async function handleCreate() {
   submitting.value = true
   try {
+    const filters: any = {}
+    const includePaths = form.value.includePaths.split(/[,;\n]/).map(s => s.trim()).filter(Boolean)
+    const excludePaths = form.value.excludePaths.split(/[,;\n]/).map(s => s.trim()).filter(Boolean)
+    const includeExtensions = form.value.includeExtensions.split(/[,;\n]/).map(s => s.trim()).filter(Boolean)
+    if (includePaths.length > 0) filters.includePaths = includePaths
+    if (excludePaths.length > 0) filters.excludePaths = excludePaths
+    if (includeExtensions.length > 0) filters.includeExtensions = includeExtensions
+    if (form.value.authorEmail.trim()) filters.authorEmail = form.value.authorEmail.trim()
+    if (form.value.since) filters.since = form.value.since
+    if (form.value.until) filters.until = form.value.until
+
     const res = await createReview(projectId.value, {
       title: form.value.title,
       fromRef: form.value.fromRef,
-      toRef: form.value.toRef
+      toRef: form.value.toRef,
+      filters: Object.keys(filters).length > 0 ? filters : undefined
     })
     if (res.code === 200 || res.code === 201) {
       ElMessage.success('审查任务已创建')
       dialogVisible.value = false
-      form.value = { title: 'Code Review', fromRef: 'HEAD~1', toRef: 'HEAD' }
+      form.value = { title: 'Code Review', fromRef: 'HEAD~1', toRef: 'HEAD',
+        includePaths: '', excludePaths: '', includeExtensions: '',
+        authorEmail: '', since: '', until: '' }
       await fetchReviews()
-      startPolling()
+      if (res.data.id) {
+        subscribeToReviewSse(res.data.id)
+      }
     }
   } catch (e) {
     console.error('Failed to create review:', e)
@@ -282,10 +307,62 @@ async function handleCreate() {
   }
 }
 
+function subscribeToReviewSse(reviewId: number) {
+  if (sseConnections.has(reviewId)) return
+
+  const es = new EventSource(`/api/reviews/${reviewId}/stream`)
+  let retryCount = 0
+  const MAX_RETRIES = 5
+
+  es.addEventListener('connected', () => {
+    console.log(`[SSE] 已连接: reviewId=${reviewId}`)
+    retryCount = 0
+  })
+
+  es.addEventListener('progress', (event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data)
+      const review = reviews.value.find(r => r.id === reviewId)
+      if (review) {
+        review.status = 'processing'
+        review.reviewedFiles = data.reviewedFiles
+        review.totalFiles = data.totalFiles
+      }
+    } catch (e) {
+      console.error('[SSE] 解析进度事件失败:', e)
+    }
+  })
+
+  es.addEventListener('completed', async () => {
+    console.log(`[SSE] 审查完成: reviewId=${reviewId}`)
+    sseConnections.delete(reviewId)
+    es.close()
+    await fetchReviews()
+  })
+
+  es.addEventListener('failed', async () => {
+    console.log(`[SSE] 审查失败: reviewId=${reviewId}`)
+    sseConnections.delete(reviewId)
+    es.close()
+    await fetchReviews()
+  })
+
+  es.onerror = () => {
+    retryCount++
+    if (retryCount > MAX_RETRIES) {
+      console.log(`[SSE] 重试次数超限，断开连接: reviewId=${reviewId}`)
+      sseConnections.delete(reviewId)
+      es.close()
+    }
+  }
+
+  sseConnections.set(reviewId, es)
+}
+
 async function handleCancel(review: Review) {
   try {
     await ElMessageBox.confirm('确定要取消该审查吗？', '取消审查', {
-      confirmButtonText: '确定取消',
+      confirmButtonText: '确定',
       cancelButtonText: '返回',
       type: 'warning'
     })
@@ -320,31 +397,24 @@ function goBack() {
   router.push('/projects')
 }
 
-function startPolling() {
-  if (pollTimer) return
-  pollTimer = setInterval(async () => {
-    const hasProcessing = reviews.value.some(r => r.status === 'processing' || r.status === 'pending')
-    if (!hasProcessing) {
-      if (pollTimer) {
-        clearInterval(pollTimer)
-        pollTimer = null
-      }
-      return
-    }
-    await fetchReviews()
-  }, 3000)
+function goToStats() {
+  router.push(`/projects/${projectId.value}/statistics`)
 }
 
 onMounted(async () => {
   await Promise.all([fetchProject(), fetchReviews()])
-  startPolling()
+  for (const r of reviews.value) {
+    if (r.status === 'processing' || r.status === 'pending') {
+      subscribeToReviewSse(r.id!)
+    }
+  }
 })
 
 onUnmounted(() => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
+  for (const [, es] of sseConnections) {
+    es.close()
   }
+  sseConnections.clear()
 })
 </script>
 
@@ -359,9 +429,14 @@ onUnmounted(() => {
           <h1 class="page-title">{{ project?.name || '审查记录' }}</h1>
           <p class="page-subtitle">{{ project?.repoPath }}</p>
         </div>
-        <el-button type="primary" :icon="Plus" @click="openDialog" round>
-          新建审查
-        </el-button>
+        <div style="display: flex; gap: 8px;">
+          <el-button type="primary" :icon="Plus" @click="openDialog" round>
+            新建审查
+          </el-button>
+          <el-button :icon="TrendCharts" @click="goToStats" round>
+            趋势报表
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -455,6 +530,7 @@ onUnmounted(() => {
               placeholder="选择分支或 commit，或手动输入如 HEAD~1"
               style="width: 100%"
               :loading="refsLoading"
+              popper-class="ref-select-dropdown"
               @change="diffBlocks = []"
             >
               <el-option-group
@@ -467,7 +543,9 @@ onUnmounted(() => {
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"
-                />
+                >
+                  <span class="ref-option-label" :title="item.label">{{ item.label }}</span>
+                </el-option>
               </el-option-group>
             </el-select>
           </el-form-item>
@@ -480,6 +558,7 @@ onUnmounted(() => {
               placeholder="选择分支或 commit，或手动输入如 HEAD"
               style="width: 100%"
               :loading="refsLoading"
+              popper-class="ref-select-dropdown"
               @change="diffBlocks = []"
             >
               <el-option-group
@@ -492,11 +571,77 @@ onUnmounted(() => {
                   :key="item.value"
                   :label="item.label"
                   :value="item.value"
-                />
+                >
+                  <span class="ref-option-label" :title="item.label">{{ item.label }}</span>
+                </el-option>
               </el-option-group>
             </el-select>
           </el-form-item>
         </div>
+        <div class="filter-toggle-row">
+          <el-button
+            text
+            size="small"
+            :icon="showFilters ? ArrowDown : ArrowRight"
+            @click="showFilters = !showFilters"
+          >
+            高级过滤
+          </el-button>
+        </div>
+        <template v-if="showFilters">
+          <div class="filter-section">
+            <el-form-item label="包含路径（逗号/分号/换行分隔，支持通配符如 src/main/java/**）">
+              <el-input
+                v-model="form.includePaths"
+                type="textarea"
+                :rows="2"
+                placeholder="src/main/java/**"
+              />
+            </el-form-item>
+            <el-form-item label="排除路径（逗号/分号/换行分隔）">
+              <el-input
+                v-model="form.excludePaths"
+                type="textarea"
+                :rows="2"
+                placeholder="**/test/**, **/generated/**"
+              />
+            </el-form-item>
+            <el-form-item label="文件扩展名（逗号分隔）">
+              <el-input
+                v-model="form.includeExtensions"
+                placeholder=".java, .kt"
+              />
+            </el-form-item>
+            <el-form-item label="按作者（姓名或邮箱模糊匹配）">
+              <el-input
+                v-model="form.authorEmail"
+                placeholder="zhangsan 或 zhangsan@example.com"
+              />
+            </el-form-item>
+            <div class="refs-row">
+              <el-form-item label="起始时间" class="ref-item">
+                <el-date-picker
+                  v-model="form.since"
+                  type="datetime"
+                  placeholder="选择起始时间"
+                  format="YYYY-MM-DDTHH:mm:ss"
+                  value-format="YYYY-MM-DDTHH:mm:ss"
+                  style="width: 100%"
+                />
+              </el-form-item>
+              <el-form-item label="截止时间" class="ref-item">
+                <el-date-picker
+                  v-model="form.until"
+                  type="datetime"
+                  placeholder="选择截止时间"
+                  format="YYYY-MM-DDTHH:mm:ss"
+                  value-format="YYYY-MM-DDTHH:mm:ss"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </div>
+          </div>
+        </template>
         <div class="preview-btn-row">
           <el-button
             type="default"
@@ -700,6 +845,18 @@ onUnmounted(() => {
 
 .preview-btn-row {
   margin-bottom: 12px;
+}
+
+.filter-toggle-row {
+  margin-bottom: 8px;
+}
+
+.filter-section {
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--radius-md);
+  padding: 12px 14px 4px;
+  margin-bottom: 12px;
+  background: var(--el-fill-color-lighter);
 }
 
 .diff-preview {

@@ -1,6 +1,10 @@
 # CodeAudit — 本地 AI 代码审查平台
 
-一个**完全本地运行**的 AI 代码审查工具。源码不出内网，通过本地 Ollama 或云端 OpenAI 兼容 API 进行代码 diff 级审查，结果通过 Web 管理台展示。
+<p align="center">
+  <img src="docs/images/login.png" alt="登录页" width="80%">
+</p>
+
+一个**完全本地运行**的 AI 代码审查工具。源码不出内网，通过本地 Ollama 或云端 OpenAI 兼容 API 对代码变更（diff）进行逐文件智能审查，审查结果在 Web 管理台中集中展示与跟踪。
 
 > **当前版本**：v0.1.0（MVP）
 
@@ -8,17 +12,17 @@
 
 ## ✨ 核心功能
 
-| 模块 | 功能 |
-|------|------|
-| 📦 Git 仓库接入 | 本地 Git 仓库路径扫描，提取分支间 / commit 间 diff |
-| 🔍 AI 代码审查 | diff 逐文件送入 LLM，返回结构化问题列表（HIGH/MEDIUM/LOW） |
-| 📊 Web 管理台 | 项目 CRUD、审查记录列表、报告详情、问题状态管理 |
-| 📏 规则引擎 | 内置预设规则 + 用户自定义 Prompt 规则 CRUD + 启用/禁用 |
-| 🎨 Diff 预览 | 变更文件列表查看、完整 diff 内容展示、语法高亮 |
+| 模块 | 功能描述 |
+|------|----------|
+| 📦 Git 仓库接入 | 扫描本地 Git 仓库，提取分支间或 Commit 间的代码 diff |
+| 🔍 AI 代码审查 | 将 diff 逐文件送入 LLM，返回结构化问题列表（HIGH / MEDIUM / LOW） |
+| 📊 Web 管理台 | 项目的增删改查、审查记录列表、报告详情、问题状态管理 |
+| 📏 规则引擎 | 内置预设规则 + 用户自定义 Prompt 规则的 CRUD 与启用/禁用 |
+| 🎨 Diff 预览 | 变更文件列表查看、完整 diff 内容展示、代码语法高亮 |
 | 🌐 多语言支持 | Java / Python / Go / JavaScript / TypeScript / C / C++ 等 |
 | 🤖 多模型切换 | 本地 Ollama + 云端 OpenAI 兼容 API（DeepSeek / 阿里百炼等） |
-| ⚡ 文件级并行审查 | 多文件并发调用 AI，并行度可配（1~8） |
-| 🎯 问题追踪 | 问题可标记为「已修复 / 已忽略」|
+| ⚡ 文件级并行审查 | 多文件并发调用 AI，并行度可配置（1~8） |
+| 🎯 问题追踪 | 问题可标记为「已修复」或「已忽略」，支持筛选与导出 |
 
 ---
 
@@ -111,30 +115,47 @@ npm run dev
 
 前端默认运行在 `http://localhost:5173`，已配置代理转发至后端。
 
+### 6. 登录
+
+前端启动后访问 `http://localhost:5173`，使用默认管理员账号登录：
+
+```
+用户名：admin
+密码：admin
+```
+
 ---
 
 ## 📖 使用说明
 
 ### 1. 添加项目
 
-进入「项目管理」页面，点击「添加项目」，填写：
+进入「项目列表」页面，点击「新建项目」，填写：
 - **项目名称**：任意显示名称
 - **仓库路径**：本地 Git 仓库的绝对路径（如 `E:/projects/my-app`）
 - **编程语言**：Java / Python / Go 等
 
+<p align="center">
+  <img src="docs/images/project.png" alt="项目列表" width="80%">
+</p>
+
 ### 2. 创建审查
 
-进入「审查记录」页面，点击「新建审查」：
-- 选择项目和分支 / commit 范围
+进入项目详情页，点击「新建审查」：
+- 选择对比的分支或 Commit 范围
 - 点击「预览变更」查看待审查文件列表
 - 提交审查任务，系统将在后台异步执行 AI 分析
 
 ### 3. 查看结果
 
 审查完成后，点击审查记录进入详情页：
-- 查看所有问题（HIGH / MEDIUM / LOW 分级）
-- 点击问题查看详情、修复建议
+- 查看所有问题（HIGH / MEDIUM / LOW 分级统计）
+- 点击问题查看详情与修复建议
 - 标记问题处理状态（已修复 / 已忽略）
+
+<p align="center">
+  <img src="docs/images/detail.png" alt="审查详情" width="80%">
+</p>
 
 ### 4. 规则管理
 
@@ -143,6 +164,10 @@ npm run dev
 - 添加自定义规则（名称、分类、语言、Prompt 描述）
 - 启用 / 禁用规则
 
+<p align="center">
+  <img src="docs/images/rule.png" alt="审查规则" width="80%">
+</p>
+
 ### 5. 系统设置
 
 进入「系统设置」页面：
@@ -150,6 +175,10 @@ npm run dev
 - 模型选择：自动拉取 Ollama 已安装模型列表
 - 配置并行度、Temperature 等参数
 - 检测 Ollama 连接状态
+
+<p align="center">
+  <img src="docs/images/setting.png" alt="系统设置" width="80%">
+</p>
 
 ---
 
@@ -177,7 +206,7 @@ code-aduit/
 │       ├── router/                  # 路由配置
 │       ├── utils/                   # 工具函数
 │       └── views/                   # 页面
-│           ├── Projects.vue         # 项目管理
+│           ├── Projects.vue         # 项目列表
 │           ├── Reviews.vue          # 审查记录 + 新建审查
 │           ├── ReviewDetail.vue     # 审查详情
 │           ├── Rules.vue            # 规则管理
@@ -261,6 +290,12 @@ mvn test
 cd web
 npx vue-tsc --noEmit
 ```
+
+---
+
+## 🤝 参与贡献
+
+详情请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
 ---
 

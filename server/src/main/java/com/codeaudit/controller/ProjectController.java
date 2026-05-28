@@ -115,7 +115,8 @@ public class ProjectController {
     public Response<List<BranchInfo>> getBranches(@PathVariable Long id) {
         Project project = projectService.findById(id)
                 .orElseThrow(() -> new BizException(404, "项目不存在: " + id));
-        List<BranchInfo> branches = gitService.listBranches(project.getRepoPath());
+        String repoPath = gitService.resolveRepoPath(project);
+        List<BranchInfo> branches = gitService.listBranches(repoPath);
         return Response.ok(branches);
     }
 
@@ -127,7 +128,8 @@ public class ProjectController {
                                                   @RequestParam(defaultValue = "30") int count) {
         Project project = projectService.findById(id)
                 .orElseThrow(() -> new BizException(404, "项目不存在: " + id));
-        List<CommitInfo> commits = gitService.listRecentCommits(project.getRepoPath(), count);
+        String repoPath = gitService.resolveRepoPath(project);
+        List<CommitInfo> commits = gitService.listRecentCommits(repoPath, count);
         return Response.ok(commits);
     }
 
@@ -144,7 +146,8 @@ public class ProjectController {
         Project project = projectService.findById(id)
                 .orElseThrow(() -> new BizException(404, "项目不存在: " + id));
         String language = project.getLanguage() != null ? project.getLanguage() : "Java";
-        List<DiffBlock> diffBlocks = gitService.previewDiff(project.getRepoPath(), fromRef, toRef, language);
+        String repoPath = gitService.resolveRepoPath(project);
+        List<DiffBlock> diffBlocks = gitService.previewDiff(repoPath, fromRef, toRef, language);
         return Response.ok(diffBlocks);
     }
 }

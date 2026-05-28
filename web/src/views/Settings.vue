@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Setting, Link, Promotion, CircleCheckFilled, Connection, SwitchFilled } from '@element-plus/icons-vue'
 import api from '@/api/index'
@@ -13,6 +13,20 @@ const openaiModel = ref('gpt-4o')
 const openaiTemperature = ref(0.1)
 const thinkingEnabled = ref(true)
 const parallelism = ref(2)
+const githubToken = ref('')
+
+const webhookUrl = computed(() => {
+  return window.location.origin + '/api/webhook/github'
+})
+
+const isLocalhost = computed(() => {
+  return webhookUrl.value.startsWith('http://localhost') || webhookUrl.value.startsWith('http://127.0.0.1')
+})
+
+function copyWebhookUrl() {
+  navigator.clipboard.writeText(webhookUrl.value)
+  ElMessage.success('已复制 Webhook URL')
+}
 
 const checking = ref(false)
 const ollamaStatus = ref<'unknown' | 'connected' | 'disconnected'>('unknown')
@@ -63,7 +77,8 @@ async function saveSettings() {
       openaiModel: openaiModel.value,
       openaiTemperature: openaiTemperature.value,
       thinkingEnabled: thinkingEnabled.value,
-      parallelism: parallelism.value
+      parallelism: parallelism.value,
+      githubToken: githubToken.value
     })
     ElMessage.success('设置已保存（重启后还原为配置文件值）')
   } catch (e: any) {
@@ -86,6 +101,7 @@ async function fetchSettings() {
       openaiTemperature.value = res.data.openaiTemperature ?? 0.1
       thinkingEnabled.value = res.data.thinkingEnabled ?? true
       parallelism.value = res.data.parallelism ?? 2
+      githubToken.value = typeof res.data.githubToken === 'string' && res.data.githubToken ? res.data.githubToken : ''
     }
   } catch (e) {
     console.error('Failed to fetch settings:', e)
@@ -271,9 +287,53 @@ onMounted(async () => {
             <span>推荐 2~4，云端 API 建议不超过 4 以免触发限流</span>
           </div>
         </div>
-      </div>
+    </div>
 
-      <div class="save-bar">
+    <!-- GitHub 配置 -->
+    <div class="settings-card">
+      <div class="settings-card-header">
+        <div class="settings-icon" style="background: var(--color-success-light); color: var(--color-success);">
+          <svg style="width: 18px; height: 18px;" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        </div>
+        <div>
+          <h3>GitHub 集成</h3>
+          <p>配置 Token 以连接 GitHub 仓库和 Webhook</p>
+        </div>
+      </div>
+      <div class="settings-card-body">
+        <div class="form-item">
+          <label>Personal Access Token</label>
+          <el-input v-model="githubToken" type="password" show-password placeholder="ghp_..." />
+          <span class="form-hint">需要 repo 权限，用于 clone 仓库和发布 PR 评论</span>
+        </div>
+        <div class="form-item">
+          <label>Webhook URL（复制到 GitHub 仓库 Settings → Webhooks）</label>
+          <el-input :model-value="webhookUrl" readonly>
+            <template #append>
+              <el-button @click="copyWebhookUrl">复制</el-button>
+            </template>
+          </el-input>
+          <span v-if="isLocalhost" class="form-hint form-warn">
+            ⚠️ GitHub Webhook 要求 HTTPS 公网地址，localhost 无法使用
+          </span>
+          <span class="form-hint">Payload URL 填入此地址，Content type 选 application/json</span>
+        </div>
+        <div class="form-item" v-if="isLocalhost">
+          <label>本地开发如何使用 Webhook？</label>
+          <div class="ngrok-guide">
+            <p>使用 <strong>ngrok</strong> 将本地服务暴露到公网 HTTPS：</p>
+            <ol>
+              <li>下载 <el-link href="https://ngrok.com/download" target="_blank" type="primary">ngrok</el-link> 并安装</li>
+              <li>终端运行：<code>ngrok http 9090</code></li>
+              <li>ngrok 会生成一个 HTTPS 地址，如 <code>https://xxxx.ngrok-free.app</code></li>
+              <li>将 <code>https://xxxx.ngrok-free.app/api/webhook/github</code> 填入 GitHub Webhook</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="save-bar">
         <el-button type="primary" :loading="saving" @click="saveSettings" round>
           保存设置
         </el-button>
@@ -349,6 +409,36 @@ onMounted(async () => {
   margin-top: 4px;
   font-size: 11px;
   color: var(--color-text-muted);
+}
+
+.form-warn {
+  color: #e6a23c;
+  font-weight: 500;
+}
+
+.ngrok-guide {
+  background: var(--color-border-light);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.8;
+}
+
+.ngrok-guide p {
+  margin: 0 0 8px;
+}
+
+.ngrok-guide ol {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.ngrok-guide code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
 }
 
 .input-with-status {

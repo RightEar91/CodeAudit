@@ -1,18 +1,35 @@
 spring:
   datasource:
-    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL
     driver-class-name: org.h2.Driver
     username: sa
     password:
   jpa:
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
+    show-sql: false
   ai:
     ollama:
       base-url: http://localhost:11434
       chat:
         model: qwen3:8b
+  mail:
+    host: localhost
+
+codeaudit:
+  ai:
+    provider: ollama
+    review:
+      thinking-enabled: false
+      parallelism: 1
+  jwt:
+    secret: Integration-Test-Secret-Must-Be-At-Least-256-Bits-Long-Enough
+    expiration-ms: 3600000
+  github:
+    token: ""
+    clone-base-dir: /tmp/codeaudit-test
+    webhook-secret: ""
+    ssl-verify: true
 
 logging:
   level:

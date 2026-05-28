@@ -106,6 +106,14 @@ public class Review {
     @Column(name = "error_message", length = 2000)
     private String errorMessage;
 
+    /** GitHub PR 编号（由 Webhook 触发的审查会将 PR 编号写入此字段） */
+    @Column(name = "pr_number")
+    private Integer prNumber;
+
+    /** GitHub PR URL（如 https://github.com/user/repo/pull/42） */
+    @Column(name = "pr_url", length = 500)
+    private String prUrl;
+
     /** 审查发现的问题列表（级联删除），列表查询时不序列化，通过 /api/reviews/:id/issues 单独获取 */
     @JsonIgnore
     @OneToMany(mappedBy = "review", cascade = CascadeType.ALL, orphanRemoval = true)
